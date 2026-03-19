@@ -1,0 +1,9 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: oxiledger
+    ports:
+      - "5432:5432"

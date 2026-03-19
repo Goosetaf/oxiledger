@@ -41,6 +41,25 @@ curl -sSL http://dioxus.dev/install.sh | sh
 dx serve
 ```
 
+# Verifying feature builds
+
+When you change app code, verify both feature-specific targets still compile.
+
+```sh
+# Browser/web build only
+cargo check --no-default-features --features web
+
+# Server build only
+cargo check --no-default-features --features server
+```
+
+If you want full binaries instead of a compile check, use:
+
+```sh
+cargo build --no-default-features --features web
+cargo build --no-default-features --features server
+```
+
 # UI with RSX
 
 ```rust
