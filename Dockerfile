@@ -10,6 +10,8 @@ RUN rustup target add wasm32-unknown-unknown
 WORKDIR /app
 COPY Cargo.toml Cargo.lock Dioxus.toml ./
 
+ENV SQLX_OFFLINE=true
+
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo fetch
 RUN cargo build --release

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO journal_entries (transaction_id, account_id, entry_type, amount, memo)\n                 VALUES ($1, $2, $3, $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        {
+          "Custom": {
+            "name": "entry_type",
+            "kind": {
+              "Enum": [
+                "Debit",
+                "Credit"
+              ]
+            }
+          }
+        },
+        "Numeric",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5759e62ff41201d9526b27512cb2ef21829f8d8758aeb28f01543e4e98874254"
+}

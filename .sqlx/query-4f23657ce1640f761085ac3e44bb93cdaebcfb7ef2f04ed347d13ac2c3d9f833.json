@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE transactions\n            SET date = $3,\n                description = $4,\n                reference = $5,\n                updated_at = NOW()\n            WHERE id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Date",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4f23657ce1640f761085ac3e44bb93cdaebcfb7ef2f04ed347d13ac2c3d9f833"
+}

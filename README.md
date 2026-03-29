@@ -35,3 +35,8 @@ dx serve --platform desktop
 ```
 
 
+### Preparing Database Files
+
+```bash
+cargo sqlx prepare --workspace -- --features server
+```

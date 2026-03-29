@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                a.id,\n                a.name,\n                a.code,\n                a.normal_balance::text AS \"normal_balance!: String\",\n                COALESCE(SUM(CASE WHEN je.entry_type = 'Debit' THEN je.amount ELSE 0::numeric END), 0::numeric)\n                    AS \"debit_sum!: rust_decimal::Decimal\",\n                COALESCE(SUM(CASE WHEN je.entry_type = 'Credit' THEN je.amount ELSE 0::numeric END), 0::numeric)\n                    AS \"credit_sum!: rust_decimal::Decimal\"\n            FROM accounts a\n            LEFT JOIN journal_entries je ON je.account_id = a.id\n            WHERE a.user_id = $1 AND a.is_active = TRUE\n            GROUP BY a.id, a.name, a.code, a.normal_balance\n            ORDER BY a.account_type, COALESCE(a.code, ''), a.name\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "normal_balance!: String",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "debit_sum!: rust_decimal::Decimal",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "credit_sum!: rust_decimal::Decimal",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "b71dc2f3d1727025f1116f9f31bf06852ba58c6f4e973a12e2486fda50347c03"
+}

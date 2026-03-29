@@ -1,0 +1,99 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                t.id AS \"transaction_id: Uuid\",\n                t.date,\n                t.description,\n                t.reference,\n                t.user_id,\n                je.id AS \"entry_id: Uuid\",\n                je.account_id AS \"account_id: Uuid\",\n                a.name AS \"account_name?\",\n                a.code AS \"account_code?\",\n                je.entry_type AS \"entry_type: EntryType\",\n                je.amount AS \"amount: Decimal\",\n                je.memo\n            FROM transactions t\n            JOIN journal_entries je ON je.transaction_id = t.id\n            JOIN accounts a ON a.id = je.account_id\n            WHERE t.id = $1 AND t.user_id = $2\n            ORDER BY je.created_at, je.id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "transaction_id: Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "reference",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "entry_id: Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "account_id: Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "account_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "account_code?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "entry_type: EntryType",
+        "type_info": {
+          "Custom": {
+            "name": "entry_type",
+            "kind": {
+              "Enum": [
+                "Debit",
+                "Credit"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "amount: Decimal",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 11,
+        "name": "memo",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "0ed566e183dbe80d6bedba0cb5f37ca724ecf02b5f294378979f7fa050e50861"
+}

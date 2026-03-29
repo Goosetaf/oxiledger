@@ -1,0 +1,115 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO accounts (user_id, name, code, account_type, normal_balance, description)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            RETURNING\n                id, user_id, name, code,\n                account_type AS \"account_type: AccountType\",\n                normal_balance AS \"normal_balance: NormalBalance\",\n                description, is_active",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "account_type: AccountType",
+        "type_info": {
+          "Custom": {
+            "name": "account_type",
+            "kind": {
+              "Enum": [
+                "Asset",
+                "Liability",
+                "Equity",
+                "Revenue",
+                "Expense"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "normal_balance: NormalBalance",
+        "type_info": {
+          "Custom": {
+            "name": "normal_balance",
+            "kind": {
+              "Enum": [
+                "Debit",
+                "Credit"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        {
+          "Custom": {
+            "name": "account_type",
+            "kind": {
+              "Enum": [
+                "Asset",
+                "Liability",
+                "Equity",
+                "Revenue",
+                "Expense"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "normal_balance",
+            "kind": {
+              "Enum": [
+                "Debit",
+                "Credit"
+              ]
+            }
+          }
+        },
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "9b10739edc4d4dd2366e1623107b0ac7bad07aefdf58b71adcfce6db46bb1e92"
+}

@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts\n            SET name = $3,\n                code = $4,\n                account_type = $5,\n                normal_balance = $6,\n                description = $7,\n                updated_at = NOW()\n            WHERE id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        {
+          "Custom": {
+            "name": "account_type",
+            "kind": {
+              "Enum": [
+                "Asset",
+                "Liability",
+                "Equity",
+                "Revenue",
+                "Expense"
+              ]
+            }
+          }
+        },
+        {
+          "Custom": {
+            "name": "normal_balance",
+            "kind": {
+              "Enum": [
+                "Debit",
+                "Credit"
+              ]
+            }
+          }
+        },
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ad2aa279e873262d929e7aacb3bc0a6897c992923f53accba88dfd7b19d10bb4"
+}

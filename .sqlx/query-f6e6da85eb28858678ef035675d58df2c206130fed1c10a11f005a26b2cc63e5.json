@@ -1,0 +1,87 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, user_id, name, code,\n                account_type AS \"account_type: AccountType\",\n                normal_balance AS \"normal_balance: NormalBalance\",\n                description, is_active\n            FROM accounts\n            WHERE user_id = $1\n            ORDER BY is_active DESC, account_type, COALESCE(code, ''), name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "account_type: AccountType",
+        "type_info": {
+          "Custom": {
+            "name": "account_type",
+            "kind": {
+              "Enum": [
+                "Asset",
+                "Liability",
+                "Equity",
+                "Revenue",
+                "Expense"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "normal_balance: NormalBalance",
+        "type_info": {
+          "Custom": {
+            "name": "normal_balance",
+            "kind": {
+              "Enum": [
+                "Debit",
+                "Credit"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_active",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "f6e6da85eb28858678ef035675d58df2c206130fed1c10a11f005a26b2cc63e5"
+}
