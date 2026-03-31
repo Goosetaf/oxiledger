@@ -45,7 +45,7 @@ jobs:
 
       - name: Add swap space
         run: |
-          sudo fallocate -l 8G /mnt/swapfile
+          sudo fallocate -l 2G /mnt/swapfile
           sudo chmod 600 /mnt/swapfile
           sudo mkswap /mnt/swapfile
           sudo swapon /mnt/swapfile
