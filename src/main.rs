@@ -36,7 +36,9 @@ enum Route {
         Login {},
         #[route("/register")]
         Register {},
-        // OIDC stubs — not functional yet, schema supports it in future
+        // OIDC routes — OidcLogin lists configured providers.
+        // /auth/oidc/:id/start and /auth/oidc/callback are native axum handlers
+        // registered in server_main; they redirect the browser and never reach here.
         #[route("/auth/oidc/login")]
         OidcLogin {},
         #[route("/auth/oidc/callback")]
@@ -106,6 +108,7 @@ fn main() {
 async fn server_main() {
     use axum::Extension;
     use dioxus_server::{DioxusRouterExt, ServeConfig};
+    use std::sync::Arc;
     use tower_cookies::CookieManagerLayer;
 
     dotenvy::dotenv().ok();
@@ -113,11 +116,25 @@ async fn server_main() {
     let pool = server::db::connect().await;
     server::db::run_migrations(&pool).await;
 
+    // Load OIDC provider config (performs discovery HTTP calls at startup).
+    let oidc_config = Arc::new(server::oidc::load_config().await);
+
     let cfg = ServeConfig::new();
 
     let app = axum::Router::new()
+        // Native axum routes for the OIDC redirect/callback — these must bypass
+        // the Dioxus server function layer so they can issue HTTP redirects.
+        .route(
+            "/auth/oidc/{provider_id}/start",
+            axum::routing::get(server::oidc::handle_start),
+        )
+        .route(
+            "/auth/oidc/callback",
+            axum::routing::get(server::oidc::handle_callback),
+        )
         .serve_dioxus_application(cfg, App)
         .layer(CookieManagerLayer::new())
+        .layer(Extension(oidc_config))
         .layer(Extension(pool));
 
     let addr: std::net::SocketAddr = std::env::var("OXILEDGER_ADDR")
@@ -128,7 +145,6 @@ async fn server_main() {
         .await
         .expect("Failed to bind to address");
 
-    //tracing::info!("OxiLedger listening on http://{addr}");
     axum::serve(listener, app.into_make_service())
         .await
         .expect("Server error");

@@ -15,8 +15,25 @@ async fn register_action(req: RegisterRequest) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {
         use crate::server::auth;
+        use std::sync::Arc;
 
         let (pool, cookies) = auth::extract_context().await?;
+
+        // Block registration when password login is disabled.
+        {
+            use dioxus::prelude::dioxus_fullstack::FullstackContext;
+            if let Some(ctx) = FullstackContext::current() {
+                if let Some(config) =
+                    ctx.extension::<Arc<crate::server::oidc::OidcConfig>>()
+                {
+                    if config.disable_password_login {
+                        return Err(ServerFnError::new(
+                            "Password login is disabled. Please use SSO.",
+                        ));
+                    }
+                }
+            }
+        }
 
         let exists = sqlx::query_scalar!(
             "SELECT EXISTS(SELECT 1 FROM users WHERE username = $1 OR email = $2)",
@@ -65,6 +82,63 @@ async fn register_action(req: RegisterRequest) -> Result<(), ServerFnError> {
 
 #[component]
 pub fn Register() -> Element {
+    // Check whether password login is enabled before rendering the form.
+    let config_future =
+        use_server_future(crate::views::oidc::get_oidc_config)?;
+
+    let (_providers, password_enabled) = match config_future() {
+        Some(Ok(v)) => v,
+        Some(Err(e)) => return Err(e.into()),
+        None => {
+            return rsx! {
+                div { class: "auth-shell",
+                    div { class: "auth-shell-inner",
+                        div { class: "message message-info", "Loading..." }
+                    }
+                }
+            };
+        }
+    };
+
+    // If password login is disabled, redirect to the SSO page.
+    if !password_enabled {
+        return rsx! {
+            div { class: "auth-shell",
+                div { class: "auth-shell-inner",
+                    section { class: "auth-panel auth-panel-single",
+                        div { class: "auth-panel-header",
+                            div { class: "auth-brand",
+                                div { class: "auth-brand-mark",
+                                    img {
+                                        src: asset!("/assets/header.svg"),
+                                        alt: "OxiLedger logo",
+                                    }
+                                }
+                                div { class: "brand-copy",
+                                    span { class: "brand-title", "OxiLedger" }
+                                    span { class: "brand-subtitle", "Registration unavailable" }
+                                }
+                            }
+                        }
+                        div { class: "auth-panel-body",
+                            div { class: "auth-copy",
+                                h2 { class: "section-title", "Registration is disabled" }
+                                p { class: "supporting-text",
+                                    "This instance requires single sign-on. Contact your administrator to get access."
+                                }
+                            }
+                            Link {
+                                to: crate::Route::Login {},
+                                class: "btn btn-primary",
+                                "Back to sign in"
+                            }
+                        }
+                    }
+                }
+            }
+        };
+    }
+
     let mut username = use_signal(String::new);
     let mut email = use_signal(String::new);
     let mut password = use_signal(String::new);
