@@ -23,9 +23,7 @@ async fn login_action(req: LoginRequest) -> Result<(), ServerFnError> {
         {
             use dioxus::prelude::dioxus_fullstack::FullstackContext;
             if let Some(ctx) = FullstackContext::current() {
-                if let Some(config) =
-                    ctx.extension::<Arc<crate::server::oidc::OidcConfig>>()
-                {
+                if let Some(config) = ctx.extension::<Arc<crate::server::oidc::OidcConfig>>() {
                     if config.disable_password_login {
                         return Err(ServerFnError::new(
                             "Password login is disabled. Please use SSO.",
@@ -73,8 +71,7 @@ async fn login_action(req: LoginRequest) -> Result<(), ServerFnError> {
 pub fn Login() -> Element {
     // Fetch OIDC config so we can show provider buttons and conditionally hide
     // the password form.
-    let config_future =
-        use_server_future(crate::views::oidc::get_oidc_config)?;
+    let config_future = use_server_future(crate::views::oidc::get_oidc_config)?;
 
     let (providers, password_enabled) = match config_future() {
         Some(Ok(v)) => v,
@@ -182,7 +179,11 @@ pub fn Login() -> Element {
                         if password_enabled {
                             form { class: "auth-stack", onsubmit: handle_submit,
                                 div { class: "field-block",
-                                    label { class: "field-label", r#for: "username", "Username" }
+                                    label {
+                                        class: "field-label",
+                                        r#for: "username",
+                                        "Username"
+                                    }
                                     input {
                                         id: "username",
                                         class: "input",
@@ -195,7 +196,11 @@ pub fn Login() -> Element {
                                 }
 
                                 div { class: "field-block",
-                                    label { class: "field-label", r#for: "password", "Password" }
+                                    label {
+                                        class: "field-label",
+                                        r#for: "password",
+                                        "Password"
+                                    }
                                     input {
                                         id: "password",
                                         class: "input",

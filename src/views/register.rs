@@ -23,9 +23,7 @@ async fn register_action(req: RegisterRequest) -> Result<(), ServerFnError> {
         {
             use dioxus::prelude::dioxus_fullstack::FullstackContext;
             if let Some(ctx) = FullstackContext::current() {
-                if let Some(config) =
-                    ctx.extension::<Arc<crate::server::oidc::OidcConfig>>()
-                {
+                if let Some(config) = ctx.extension::<Arc<crate::server::oidc::OidcConfig>>() {
                     if config.disable_password_login {
                         return Err(ServerFnError::new(
                             "Password login is disabled. Please use SSO.",
@@ -83,8 +81,7 @@ async fn register_action(req: RegisterRequest) -> Result<(), ServerFnError> {
 #[component]
 pub fn Register() -> Element {
     // Check whether password login is enabled before rendering the form.
-    let config_future =
-        use_server_future(crate::views::oidc::get_oidc_config)?;
+    let config_future = use_server_future(crate::views::oidc::get_oidc_config)?;
 
     let (_providers, password_enabled) = match config_future() {
         Some(Ok(v)) => v,

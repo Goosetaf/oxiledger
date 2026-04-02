@@ -13,8 +13,8 @@ pub async fn get_oidc_config() -> Result<(Vec<OidcProviderInfo>, bool), ServerFn
     {
         use dioxus::prelude::dioxus_fullstack::FullstackContext;
 
-        let ctx = FullstackContext::current()
-            .ok_or_else(|| ServerFnError::new("No request context"))?;
+        let ctx =
+            FullstackContext::current().ok_or_else(|| ServerFnError::new("No request context"))?;
 
         let config = ctx
             .extension::<Arc<crate::server::oidc::OidcConfig>>()

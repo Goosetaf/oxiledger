@@ -343,13 +343,7 @@ pub async fn handle_callback(
     let username: String = claims
         .preferred_username()
         .map(|u| u.to_string())
-        .unwrap_or_else(|| {
-            email
-                .split('@')
-                .next()
-                .unwrap_or(&subject)
-                .to_string()
-        });
+        .unwrap_or_else(|| email.split('@').next().unwrap_or(&subject).to_string());
 
     // 5. Upsert the user row.
     //    On conflict (same provider + subject) we update the email so it stays fresh.
@@ -419,8 +413,7 @@ pub async fn handle_callback(
         }
     };
 
-    let mut cookie =
-        tower_cookies::Cookie::new(crate::server::auth::SESSION_COOKIE, token);
+    let mut cookie = tower_cookies::Cookie::new(crate::server::auth::SESSION_COOKIE, token);
     cookie.set_http_only(true);
     cookie.set_path("/");
     cookie.set_same_site(tower_cookies::cookie::SameSite::Lax); // Lax required for cross-site redirect
