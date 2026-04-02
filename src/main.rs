@@ -96,16 +96,11 @@ fn main() {
     dioxus::launch(App);
 
     #[cfg(feature = "server")]
-    {
-        tokio::runtime::Runtime::new()
-            .expect("Failed to create Tokio runtime")
-            .block_on(server_main());
-    }
+    server_main();
 }
 
-/// Custom server startup: initialise the DB pool, run migrations, then start axum.
 #[cfg(feature = "server")]
-async fn server_main() {
+fn server_main() {
     use axum::Extension;
     use dioxus_server::{DioxusRouterExt, ServeConfig};
     use std::sync::Arc;
@@ -113,39 +108,23 @@ async fn server_main() {
 
     dotenvy::dotenv().ok();
 
-    let pool = server::db::connect().await;
-    server::db::run_migrations(&pool).await;
+    dioxus::serve(|| async move {
+        let pool = server::db::connect().await;
+        server::db::run_migrations(&pool).await;
 
-    // Load OIDC provider config (performs discovery HTTP calls at startup).
-    let oidc_config = Arc::new(server::oidc::load_config().await);
+        let oidc_config = Arc::new(server::oidc::load_config().await);
 
-    let cfg = ServeConfig::new();
-
-    let app = axum::Router::new()
-        // Native axum routes for the OIDC redirect/callback — these must bypass
-        // the Dioxus server function layer so they can issue HTTP redirects.
-        .route(
-            "/auth/oidc/{provider_id}/start",
-            axum::routing::get(server::oidc::handle_start),
-        )
-        .route(
-            "/auth/oidc/callback",
-            axum::routing::get(server::oidc::handle_callback),
-        )
-        .serve_dioxus_application(cfg, App)
-        .layer(CookieManagerLayer::new())
-        .layer(Extension(oidc_config))
-        .layer(Extension(pool));
-
-    let addr: std::net::SocketAddr = std::env::var("OXILEDGER_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:8081".to_string())
-        .parse()
-        .expect("Invalid OXILEDGER_ADDR");
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .expect("Failed to bind to address");
-
-    axum::serve(listener, app.into_make_service())
-        .await
-        .expect("Server error");
+        Ok(dioxus::server::router(App)
+            .route(
+                "/auth/oidc/{provider_id}/start",
+                axum::routing::get(server::oidc::handle_start),
+            )
+            .route(
+                "/auth/oidc/callback",
+                axum::routing::get(server::oidc::handle_callback),
+            )
+            .layer(CookieManagerLayer::new())
+            .layer(Extension(oidc_config))
+            .layer(Extension(pool)))
+    });
 }
