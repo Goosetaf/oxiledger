@@ -25,8 +25,9 @@
 
 use openidconnect::{
     core::{CoreClient, CoreProviderMetadata, CoreResponseType},
-    AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
-    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
+    AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet,
+    EndpointNotSet, EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier,
+    RedirectUrl, Scope, TokenResponse,
 };
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -40,6 +41,15 @@ fn build_http_client() -> Result<reqwest::Client, reqwest::Error> {
         .build()
 }
 
+type StoredOidcClient = CoreClient<
+    EndpointSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointMaybeSet,
+    EndpointMaybeSet,
+>;
+
 /// A single fully-configured OIDC provider (secrets included — server only).
 #[derive(Clone)]
 pub struct OidcProvider {
@@ -47,12 +57,8 @@ pub struct OidcProvider {
     pub id: String,
     /// Display name shown on the login button.
     pub name: String,
-    /// Discovered + configured openidconnect metadata and client settings.
-    pub metadata: CoreProviderMetadata,
-    pub client_id: ClientId,
-    pub client_secret: ClientSecret,
-    /// Redirect URI registered with the provider.
-    pub redirect_uri: String,
+    /// Discovered + configured openidconnect client.
+    pub client: StoredOidcClient,
 }
 
 /// App-level OIDC configuration shared across requests via `Arc`.
@@ -133,7 +139,7 @@ pub async fn load_config() -> OidcConfig {
 
         let redirect_uri = match std::env::var(format!("{prefix}REDIRECT_URI")) {
             Ok(v) => v,
-            Err(e) => {
+            Err(_) => {
                 if base_url.is_empty() {
                     eprintln!(
                         "[oidc] OIDC_{n}_REDIRECT_URI missing and BASE_URL not set — skipping provider {n}"
@@ -162,22 +168,24 @@ pub async fn load_config() -> OidcConfig {
             }
         };
 
-        let client_id = ClientId::new(client_id);
-        let client_secret = ClientSecret::new(client_secret);
-
-        if let Err(e) = RedirectUrl::new(redirect_uri.clone()) {
-            eprintln!("[oidc] Invalid redirect URI ({redirect_uri}) for provider {n}: {e}");
-            continue;
-        }
+        let client = CoreClient::from_provider_metadata(
+            metadata,
+            ClientId::new(client_id),
+            Some(ClientSecret::new(client_secret)),
+        )
+        .set_redirect_uri(match RedirectUrl::new(redirect_uri.clone()) {
+            Ok(u) => u,
+            Err(e) => {
+                eprintln!("[oidc] Invalid redirect URI ({redirect_uri}) for provider {n}: {e}");
+                continue;
+            }
+        });
 
         println!("[oidc] Registered provider {n}: {name}");
         providers.push(OidcProvider {
             id: n.to_string(),
             name,
-            metadata,
-            client_id,
-            client_secret,
-            redirect_uri,
+            client,
         });
     }
 
@@ -211,27 +219,12 @@ pub async fn handle_start(
         }
     };
 
-    let client = CoreClient::from_provider_metadata(
-        provider.metadata.clone(),
-        provider.client_id.clone(),
-        Some(provider.client_secret.clone()),
-    )
-    .set_redirect_uri(match RedirectUrl::new(provider.redirect_uri.clone()) {
-        Ok(u) => u,
-        Err(e) => {
-            return (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Invalid redirect URI configured: {e}"),
-            )
-                .into_response();
-        }
-    });
-
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
     let nonce = Nonce::new_random();
     let nonce_for_url = nonce.clone();
 
-    let (auth_url, csrf_token, _returned_nonce) = client
+    let (auth_url, csrf_token, _returned_nonce) = provider
+        .client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
             CsrfToken::new_random,
@@ -338,23 +331,7 @@ pub async fn handle_callback(
     let pkce_verifier = PkceCodeVerifier::new(state_row.pkce_verifier);
     let nonce = Nonce::new(state_row.nonce);
 
-    let client = CoreClient::from_provider_metadata(
-        provider.metadata.clone(),
-        provider.client_id.clone(),
-        Some(provider.client_secret.clone()),
-    )
-    .set_redirect_uri(match RedirectUrl::new(provider.redirect_uri.clone()) {
-        Ok(u) => u,
-        Err(e) => {
-            return (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Invalid redirect URI configured: {e}"),
-            )
-                .into_response();
-        }
-    });
-
-    let token_response = match client.exchange_code(code) {
+    let token_response = match provider.client.exchange_code(code) {
         Ok(request) => {
             request
                 .set_pkce_verifier(pkce_verifier)
@@ -395,7 +372,7 @@ pub async fn handle_callback(
         }
     };
 
-    let claims = match id_token.claims(&client.id_token_verifier(), &nonce) {
+    let claims = match id_token.claims(&provider.client.id_token_verifier(), &nonce) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("[oidc] ID token verification failed: {e}");
