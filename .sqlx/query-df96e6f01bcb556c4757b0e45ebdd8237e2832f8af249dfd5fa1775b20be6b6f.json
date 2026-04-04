@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM oidc_states WHERE csrf_token = $1 AND expires_at > NOW() RETURNING provider_id, pkce_verifier, nonce",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "pkce_verifier",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "nonce",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "df96e6f01bcb556c4757b0e45ebdd8237e2832f8af249dfd5fa1775b20be6b6f"
+}

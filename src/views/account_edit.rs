@@ -5,9 +5,6 @@ use crate::{
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-#[cfg(feature = "server")]
-use {sqlx::PgPool, tower_cookies::Cookies};
-
 #[get("/api/accounts/:id")]
 async fn get_account(id: Uuid) -> Result<Account, ServerFnError> {
     #[cfg(feature = "server")]

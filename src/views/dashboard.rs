@@ -2,9 +2,6 @@ use crate::models::transaction::AccountBalance;
 use dioxus::prelude::*;
 use rust_decimal::Decimal;
 
-#[cfg(feature = "server")]
-use {sqlx::PgPool, tower_cookies::Cookies};
-
 #[get("/api/dashboard/balances")]
 async fn get_account_balances() -> Result<Vec<AccountBalance>, ServerFnError> {
     #[cfg(feature = "server")]

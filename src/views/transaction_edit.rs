@@ -14,8 +14,6 @@ use uuid::Uuid;
 use {
     crate::models::account::{AccountType, NormalBalance},
     rust_decimal::Decimal,
-    sqlx::PgPool,
-    tower_cookies::Cookies,
 };
 
 #[get("/api/transactions/accounts/all")]

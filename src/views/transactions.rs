@@ -3,9 +3,6 @@ use dioxus::prelude::*;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
-#[cfg(feature = "server")]
-use {sqlx::PgPool, tower_cookies::Cookies};
-
 use crate::models::{
     account::Account,
     transaction::{EntryType, Transaction},

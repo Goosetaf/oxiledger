@@ -3,11 +3,7 @@ use dioxus::prelude::*;
 use uuid::Uuid;
 
 #[cfg(feature = "server")]
-use {
-    crate::models::account::{AccountType, NormalBalance},
-    sqlx::PgPool,
-    tower_cookies::Cookies,
-};
+use crate::models::account::{AccountType, NormalBalance};
 
 use crate::models::account::Account;
 

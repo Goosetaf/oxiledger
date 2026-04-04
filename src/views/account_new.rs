@@ -5,11 +5,7 @@ use crate::{
 use dioxus::prelude::*;
 
 #[cfg(feature = "server")]
-use {
-    crate::models::account::{AccountType, NormalBalance},
-    sqlx::PgPool,
-    tower_cookies::Cookies,
-};
+use crate::models::account::{AccountType, NormalBalance};
 
 #[post("/api/accounts")]
 pub async fn create_account(req: CreateAccountRequest) -> Result<Account, ServerFnError> {
