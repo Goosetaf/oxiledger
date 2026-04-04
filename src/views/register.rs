@@ -4,11 +4,7 @@ use dioxus::prelude::*;
 use crate::models::user::RegisterRequest;
 
 #[cfg(feature = "server")]
-use {
-    axum::Extension,
-    sqlx::PgPool,
-    tower_cookies::{Cookie, Cookies},
-};
+use tower_cookies::Cookie;
 
 #[post("/api/auth/register")]
 async fn register_action(req: RegisterRequest) -> Result<(), ServerFnError> {

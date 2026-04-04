@@ -1,9 +1,6 @@
 use crate::views::error::LoginRedirectNotice;
 use dioxus::prelude::*;
 
-#[cfg(feature = "server")]
-use {sqlx::PgPool, tower_cookies::Cookies};
-
 #[get("/api/auth/me")]
 async fn get_current_user() -> Result<Option<String>, ServerFnError> {
     #[cfg(feature = "server")]

@@ -8,9 +8,6 @@ use crate::{
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-#[cfg(feature = "server")]
-use {sqlx::PgPool, tower_cookies::Cookies};
-
 #[post("/api/transactions")]
 pub async fn create_transaction(req: CreateTransactionRequest) -> Result<Uuid, ServerFnError> {
     #[cfg(feature = "server")]

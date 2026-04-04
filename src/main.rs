@@ -102,7 +102,6 @@ fn main() {
 #[cfg(feature = "server")]
 fn server_main() {
     use axum::Extension;
-    use dioxus_server::{DioxusRouterExt, ServeConfig};
     use std::sync::Arc;
     use tower_cookies::CookieManagerLayer;
 

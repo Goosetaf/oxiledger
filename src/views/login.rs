@@ -4,10 +4,7 @@ use dioxus::prelude::*;
 use crate::models::user::LoginRequest;
 
 #[cfg(feature = "server")]
-use {
-    sqlx::PgPool,
-    tower_cookies::{Cookie, Cookies},
-};
+use tower_cookies::Cookie;
 
 #[post("/api/auth/login")]
 async fn login_action(req: LoginRequest) -> Result<(), ServerFnError> {
