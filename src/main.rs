@@ -74,8 +74,8 @@ enum Route {
             NewBankAccount {},
             #[route("/bank-accounts/:id")]
             BankAccountDetail { id: Uuid },
-            #[route("/bank-accounts/connect")]
-            BankConnect {},
+            #[route("/bank-accounts/connect?:source_id")]
+            BankConnect { source_id: Option<Uuid> },
             #[route("/bank-accounts/connect/map?:connection_id")]
             BankAccountMap { connection_id: Uuid },
         #[route("/:..segments")]

@@ -71,10 +71,7 @@ pub async fn get_bank_account_balance(
 ) -> Result<BankAccountBalanceComparison, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::{
-            bank_sync::{provider::BankSyncProvider, EnableBankingProvider},
-            server::auth::{extract_context, require_auth},
-        };
+        use crate::server::auth::{extract_context, require_auth};
 
         let (pool, cookies) = extract_context().await?;
         let user_id = require_auth(&pool, &cookies).await?;
@@ -144,14 +141,7 @@ pub async fn get_bank_account_balance(
             .provider_account_uid
             .ok_or_else(|| ServerFnError::new("No provider account UID"))?;
 
-        if provider_id != "enable_banking" {
-            return Err(ServerFnError::new(format!(
-                "Unknown bank sync provider: {}",
-                provider_id
-            )));
-        }
-        let provider =
-            EnableBankingProvider::from_env().map_err(|e| ServerFnError::new(e.to_string()))?;
+        let provider = crate::bank_sync::get_provider(&provider_id).await?;
 
         let balances = provider
             .get_balances(&provider_session_id, &provider_account_uid)
@@ -254,6 +244,72 @@ pub async fn sync_bank_account_detail(id: Uuid) -> Result<SyncResult, ServerFnEr
     crate::views::bank_accounts::sync_bank_account(id).await
 }
 
+#[post("/api/bank-accounts/:id/disconnect")]
+pub async fn disconnect_bank_account(id: Uuid) -> Result<(), ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use crate::server::auth::{extract_context, require_auth};
+
+        let (pool, cookies) = extract_context().await?;
+        let user_id = require_auth(&pool, &cookies).await?;
+
+        let record = sqlx::query!(
+            r#"SELECT ba.bank_connection_id, ba.is_manual, bc.provider_id, bc.provider_session_id
+            FROM bank_accounts ba
+            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
+            WHERE ba.id = $1 AND ba.user_id = $2"#,
+            id,
+            user_id
+        )
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?
+        .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
+
+        if record.is_manual {
+            return Err(ServerFnError::new("This bank account is already manual"));
+        }
+
+        sqlx::query!(
+            r#"UPDATE bank_accounts
+            SET bank_connection_id = NULL,
+                provider_account_uid = NULL,
+                is_manual = TRUE,
+                last_synced_at = NULL
+            WHERE id = $1 AND user_id = $2"#,
+            id,
+            user_id
+        )
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        if let Some(connection_id) = record.bank_connection_id {
+            let remaining = sqlx::query_scalar!(
+                "SELECT COUNT(*) FROM bank_accounts WHERE bank_connection_id = $1",
+                connection_id
+            )
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .unwrap_or(0);
+
+            if remaining == 0 {
+                if let Ok(provider) = crate::bank_sync::get_provider(&record.provider_id).await {
+                    let _ = provider.revoke_session(&record.provider_session_id).await;
+                }
+
+                sqlx::query!("DELETE FROM bank_connections WHERE id = $1 AND user_id = $2", connection_id, user_id)
+                    .execute(&pool)
+                    .await
+                    .map_err(|e| ServerFnError::new(e.to_string()))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 // ── UI ─────────────────────────────────────────────────────────────────────────
 
 #[component]
@@ -268,6 +324,8 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
     let mut syncing = use_signal(|| false);
     let mut dismissing = use_signal(|| None::<Uuid>);
     let mut confirm_dismiss = use_signal(|| None::<Uuid>);
+    let mut disconnecting = use_signal(|| false);
+    let mut confirm_disconnect = use_signal(|| false);
 
     let account = match account_resource() {
         Some(Ok(a)) => a,
@@ -319,6 +377,23 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
         confirm_dismiss.set(None);
     };
 
+    let handle_disconnect = move |_| async move {
+        action_error.set(None);
+        action_success.set(None);
+        disconnecting.set(true);
+        match disconnect_bank_account(id).await {
+            Ok(_) => {
+                action_success.set(Some("Bank connection disconnected. The account is now manual.".to_string()));
+                let _ = nav.push(crate::Route::BankAccounts {});
+            }
+            Err(err) => {
+                action_error.set(Some(err.to_string()));
+                disconnecting.set(false);
+                confirm_disconnect.set(false);
+            }
+        }
+    };
+
     let txns = txns_resource.read().clone();
     let account_name = account.display_name().to_string();
     let is_manual = account.is_manual;
@@ -347,7 +422,13 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                         }
                     }
                     div { class: "actions-row",
-                        if !is_manual {
+                        if is_manual {
+                            Link {
+                                class: "btn btn-secondary",
+                                to: crate::Route::BankConnect { source_id: Some(id) },
+                                "Connect to bank"
+                            }
+                        } else {
                             Button {
                                 class: "btn btn-secondary".to_string(),
                                 disabled: syncing(),
@@ -356,6 +437,25 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                     "Syncing..."
                                 } else {
                                     "Sync now"
+                                }
+                            }
+                            if confirm_disconnect() {
+                                Button {
+                                    class: "btn btn-danger".to_string(),
+                                    disabled: disconnecting(),
+                                    onclick: handle_disconnect,
+                                    if disconnecting() { "Disconnecting..." } else { "Confirm disconnect" }
+                                }
+                                Button {
+                                    class: "btn btn-secondary".to_string(),
+                                    onclick: move |_| confirm_disconnect.set(false),
+                                    "Cancel"
+                                }
+                            } else {
+                                Button {
+                                    class: "btn btn-secondary".to_string(),
+                                    onclick: move |_| confirm_disconnect.set(true),
+                                    "Disconnect"
                                 }
                             }
                         }
@@ -374,11 +474,7 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                     div { class: "message message-success", "{msg}" }
                 }
 
-                // Balance comparison card.
-                section { class: "glass-card",
-                    div { class: "section-header",
-                        h2 { class: "section-title", "Balance" }
-                    }
+                // Balance comparison.
                     match balance_resource() {
                         None => rsx! {
                             div { class: "message message-info", "Loading balance..." }
@@ -393,120 +489,110 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                     p { class: "metric-value mono", "{cmp.internal_balance}" }
                                     p { class: "tiny-text muted", "From ledger entries" }
                                 }
-                                if !is_manual {
-                                    article { class: "metric-card",
-                                        p { class: "metric-label", "Bank balance" }
-                                        if let Some(bank_bal) = cmp.bank_balance {
-                                            p { class: "metric-value mono", "{bank_bal}" }
-                                            if let Some(currency) = cmp.bank_balance_currency.as_deref() {
-                                                p { class: "tiny-text muted", "{currency} · from bank API" }
-                                            }
-                                        } else {
-                                            p { class: "metric-value muted", "Unavailable" }
+                                article { class: "metric-card",
+                                    p { class: "metric-label", "Bank balance" }
+                                    if let Some(bank_bal) = cmp.bank_balance {
+                                        p { class: "metric-value mono", "{bank_bal}" }
+                                        if let Some(currency) = cmp.bank_balance_currency.as_deref() {
+                                            p { class: "tiny-text muted", "{currency} · from bank API" }
                                         }
+                                    } else {
+                                        p { class: "metric-value muted", "Unavailable" }
                                     }
-                                    article { class: "metric-card",
-                                        p { class: "metric-label", "Difference" }
-                                        if let Some(diff) = cmp.difference {
-                                            p { class: if diff == Decimal::ZERO { "metric-value text-positive" } else { "metric-value text-negative" },
-                                                "{diff}"
-                                            }
-                                            p { class: "tiny-text muted",
-                                                if diff == Decimal::ZERO {
-                                                    "Balanced"
-                                                } else {
-                                                    "Bank vs. ledger mismatch"
-                                                }
-                                            }
-                                        } else {
-                                            p { class: "metric-value muted", "-" }
+                                }
+                                article { class: "metric-card",
+                                    p { class: "metric-label", "Difference" }
+                                    if let Some(diff) = cmp.difference {
+                                        p { class: if diff == Decimal::ZERO { "metric-value text-positive" } else { "metric-value text-negative" },
+                                            "{diff}"
                                         }
+                                        p { class: "tiny-text muted",
+                                            if diff == Decimal::ZERO {
+                                                "Balanced"
+                                            } else {
+                                                "Bank vs. ledger mismatch"
+                                            }
+                                        }
+                                    } else {
+                                        p { class: "metric-value muted", "-" }
                                     }
                                 }
                             }
                         },
                     }
-                }
 
                 // Pending bank transactions.
-                section { class: "glass-card",
-                    div { class: "section-header",
-                        div {
-                            h2 { class: "section-title", "Pending bank transactions" }
-                            p { class: "section-subtitle",
-                                "Click 'Post' to create a ledger transaction from an imported bank transaction."
-                            }
+                div { class: "section-header",
+                    h2 { class: "section-title", "Pending bank transactions" }
+                }
+
+                if txns.is_empty() {
+                    div { class: "empty-state",
+                        div { class: "empty-icon", "+" }
+                        h3 { class: "section-title", "No pending transactions" }
+                        p { class: "supporting-text",
+                            "All imported transactions have been posted or dismissed."
                         }
                     }
-
-                    if txns.is_empty() {
-                        div { class: "empty-state",
-                            div { class: "empty-icon", "+" }
-                            h3 { class: "section-title", "No pending transactions" }
-                            p { class: "supporting-text",
-                                "All imported transactions have been posted or dismissed."
+                } else {
+                    table { class: "glass-card data-table",
+                        thead {
+                            tr {
+                                th { "Date" }
+                                th { "Description" }
+                                th { class: "col-right", "Amount" }
+                                th { class: "col-right", "Actions" }
                             }
                         }
-                    } else {
-                        table { class: "data-table",
-                            thead {
+                        tbody {
+                            for txn in txns {
                                 tr {
-                                    th { "Date" }
-                                    th { "Description" }
-                                    th { class: "col-right", "Amount" }
-                                    th { class: "col-right", "Actions" }
-                                }
-                            }
-                            tbody {
-                                for txn in txns {
-                                    tr {
-                                        td { class: "mono muted", "{txn.date}" }
-                                        td {
-                                            div { class: "stack-sm",
-                                                span { class: "label-strong", "{txn.description}" }
-                                                if let Some(ref r) = txn.reference {
-                                                    span { class: "tiny-text mono muted",
-                                                        "{r}"
-                                                    }
+                                    td { class: "mono muted", "{txn.date}" }
+                                    td {
+                                        div { class: "stack-sm",
+                                            span { class: "label-strong", "{txn.description}" }
+                                            if let Some(ref r) = txn.reference {
+                                                span { class: "tiny-text mono muted",
+                                                    "{r}"
                                                 }
                                             }
                                         }
-                                        td { class: "col-right mono",
-                                            span { class: if txn.is_inflow() { "text-positive" } else { "text-negative" },
-                                                "{txn.amount} {txn.currency}"
-                                            }
+                                    }
+                                    td { class: "col-right mono",
+                                        span { class: if txn.is_inflow() { "text-positive" } else { "text-negative" },
+                                            "{txn.amount} {txn.currency}"
                                         }
-                                        td { class: "col-right",
-                                            div { class: "actions-row justify-end",
-                                                Link {
-                                                    class: "btn btn-primary btn-sm",
-                                                    to: crate::Route::NewTransactionFromBank {
-                                                        bank_txn_id: txn.id,
-                                                    },
-                                                    "Post"
+                                    }
+                                    td { class: "col-right",
+                                        div { class: "actions-row justify-end",
+                                            Link {
+                                                class: "btn btn-primary btn-sm",
+                                                to: crate::Route::NewTransactionFromBank {
+                                                    bank_txn_id: txn.id,
+                                                },
+                                                "Post"
+                                            }
+                                            // Dismiss with inline confirmation.
+                                            if confirm_dismiss() == Some(txn.id) {
+                                                span { class: "tiny-text muted",
+                                                    "Dismiss?"
                                                 }
-                                                // Dismiss with inline confirmation.
-                                                if confirm_dismiss() == Some(txn.id) {
-                                                    span { class: "tiny-text muted",
-                                                        "Dismiss?"
-                                                    }
-                                                    Button {
-                                                        class: "btn btn-danger btn-sm".to_string(),
-                                                        disabled: dismissing() == Some(txn.id),
-                                                        onclick: move |_| handle_dismiss(txn.id),
-                                                        "Yes, dismiss"
-                                                    }
-                                                    Button {
-                                                        class: "btn btn-secondary btn-sm".to_string(),
-                                                        onclick: move |_| confirm_dismiss.set(None),
-                                                        "Cancel"
-                                                    }
-                                                } else {
-                                                    Button {
-                                                        class: "btn btn-secondary btn-sm".to_string(),
-                                                        onclick: move |_| confirm_dismiss.set(Some(txn.id)),
-                                                        "Dismiss"
-                                                    }
+                                                Button {
+                                                    class: "btn btn-danger btn-sm".to_string(),
+                                                    disabled: dismissing() == Some(txn.id),
+                                                    onclick: move |_| handle_dismiss(txn.id),
+                                                    "Yes, dismiss"
+                                                }
+                                                Button {
+                                                    class: "btn btn-secondary btn-sm".to_string(),
+                                                    onclick: move |_| confirm_dismiss.set(None),
+                                                    "Cancel"
+                                                }
+                                            } else {
+                                                Button {
+                                                    class: "btn btn-secondary btn-sm".to_string(),
+                                                    onclick: move |_| confirm_dismiss.set(Some(txn.id)),
+                                                    "Dismiss"
                                                 }
                                             }
                                         }

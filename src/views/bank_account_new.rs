@@ -1,3 +1,4 @@
+use crate::models::account::Account;
 use dioxus::prelude::*;
 use uuid::Uuid;
 
@@ -26,7 +27,6 @@ pub async fn create_manual_bank_account(
             return Err(ServerFnError::new("Currency is required"));
         }
 
-        // Verify the internal account belongs to this user.
         let count = sqlx::query_scalar!(
             "SELECT COUNT(*) FROM accounts WHERE id = $1 AND user_id = $2",
             internal_account_id,
@@ -67,167 +67,147 @@ pub async fn create_manual_bank_account(
     Err(ServerFnError::new("Server only"))
 }
 
-// ── UI ─────────────────────────────────────────────────────────────────────────
+#[derive(Clone, PartialEq)]
+pub struct ManualBankAccountFields {
+    pub name: String,
+    pub iban: Option<String>,
+    pub currency: String,
+    pub internal_account_id: Uuid,
+}
 
 #[component]
-pub fn NewBankAccount() -> Element {
-    let nav = use_navigator();
-
+pub fn ManualBankAccountForm(
+    internal_accounts: Vec<Account>,
+    submitting: bool,
+    onsubmit: EventHandler<ManualBankAccountFields>,
+) -> Element {
     let mut name = use_signal(String::new);
     let mut iban = use_signal(String::new);
     let mut currency = use_signal(|| "EUR".to_string());
     let mut internal_account_id_str = use_signal(String::new);
-    let mut form_error = use_signal(|| None::<String>);
-    let mut submitting = use_signal(|| false);
+    let mut local_error = use_signal(|| None::<String>);
 
-    let internal_accounts_resource =
-        use_resource(crate::views::transactions::list_accounts_for_txn);
-
-    let internal_accounts = match internal_accounts_resource() {
-        Some(Ok(list)) => list,
-        Some(Err(_)) | None => vec![],
-    };
-
-    let handle_submit = move |e: Event<FormData>| async move {
+    let handle_submit = move |e: Event<FormData>| {
         e.prevent_default();
-        form_error.set(None);
+        local_error.set(None);
 
-        let id_str = internal_account_id_str();
-        let internal_id = match Uuid::parse_str(&id_str) {
+        let internal_account_id = match Uuid::parse_str(&internal_account_id_str()) {
             Ok(id) => id,
             Err(_) => {
-                form_error.set(Some("Please select a ledger account.".to_string()));
+                local_error.set(Some("Please select a ledger account.".to_string()));
                 return;
             }
         };
 
-        submitting.set(true);
-        match create_manual_bank_account(
-            name(),
-            {
-                let v = iban();
-                if v.trim().is_empty() { None } else { Some(v) }
+        onsubmit.call(ManualBankAccountFields {
+            name: name(),
+            iban: {
+                let value = iban();
+                if value.trim().is_empty() {
+                    None
+                } else {
+                    Some(value)
+                }
             },
-            currency(),
-            internal_id,
-        )
-        .await
-        {
-            Ok(_) => {
-                let _ = nav.push(crate::Route::BankAccounts {});
-            }
-            Err(e) => {
-                form_error.set(Some(e.to_string()));
-                submitting.set(false);
-            }
-        }
+            currency: currency(),
+            internal_account_id,
+        });
     };
 
     rsx! {
-        div { class: "app-container",
-            div { class: "page-stack",
-                div { class: "section-header",
-                    div {
-                        h1 { class: "section-title", "Add bank account manually" }
-                        p { class: "section-subtitle",
-                            "Create a bank account without connecting to an external provider."
+        if let Some(err) = local_error() {
+            div { class: "message message-error", "{err}" }
+        }
+
+        section { class: "editor-shell",
+            form {
+                class: "stack-lg",
+                onsubmit: handle_submit,
+
+                div { class: "glass-card",
+                    div { class: "form-grid two-up",
+                        div { class: "field-block",
+                            label { class: "field-label", r#for: "ba-name", "Account name" }
+                            input {
+                                id: "ba-name",
+                                class: "input",
+                                r#type: "text",
+                                placeholder: "e.g. Main Checking",
+                                required: true,
+                                value: name,
+                                oninput: move |e| name.set(e.value()),
+                            }
                         }
-                    }
-                    Link {
-                        class: "btn btn-secondary",
-                        to: crate::Route::BankAccounts {},
-                        "Cancel"
-                    }
-                }
-
-                if let Some(err) = form_error() {
-                    div { class: "message message-error", "{err}" }
-                }
-
-                section { class: "editor-shell",
-                    form {
-                        class: "stack-lg",
-                        onsubmit: handle_submit,
-
-                        div { class: "glass-card",
-                            div { class: "form-grid two-up",
-                                div { class: "field-block",
-                                    label { class: "field-label", r#for: "ba-name", "Account name" }
-                                    input {
-                                        id: "ba-name",
-                                        class: "input",
-                                        r#type: "text",
-                                        placeholder: "e.g. Main Checking",
-                                        required: true,
-                                        value: name,
-                                        oninput: move |e| name.set(e.value()),
-                                    }
+                        div { class: "field-block",
+                            label { class: "field-label", r#for: "ba-currency", "Currency" }
+                            input {
+                                id: "ba-currency",
+                                class: "input",
+                                r#type: "text",
+                                placeholder: "EUR",
+                                maxlength: 10,
+                                required: true,
+                                value: currency,
+                                oninput: move |e| currency.set(e.value()),
+                            }
+                        }
+                        div { class: "field-block",
+                            label { class: "field-label", r#for: "ba-iban", "IBAN (optional)" }
+                            input {
+                                id: "ba-iban",
+                                class: "input",
+                                r#type: "text",
+                                placeholder: "e.g. FI21 1234 5600 0007 85",
+                                value: iban,
+                                oninput: move |e| iban.set(e.value()),
+                            }
+                        }
+                        div { class: "field-block",
+                            label { class: "field-label", r#for: "ba-account", "Ledger account" }
+                            select {
+                                id: "ba-account",
+                                class: "select",
+                                required: true,
+                                onchange: move |e| internal_account_id_str.set(e.value()),
+                                option {
+                                    value: "",
+                                    disabled: true,
+                                    selected: internal_account_id_str().is_empty(),
+                                    "Select a ledger account"
                                 }
-                                div { class: "field-block",
-                                    label { class: "field-label", r#for: "ba-currency", "Currency" }
-                                    input {
-                                        id: "ba-currency",
-                                        class: "input",
-                                        r#type: "text",
-                                        placeholder: "EUR",
-                                        maxlength: 10,
-                                        required: true,
-                                        value: currency,
-                                        oninput: move |e| currency.set(e.value()),
-                                    }
-                                }
-                                div { class: "field-block",
-                                    label { class: "field-label", r#for: "ba-iban", "IBAN (optional)" }
-                                    input {
-                                        id: "ba-iban",
-                                        class: "input",
-                                        r#type: "text",
-                                        placeholder: "e.g. FI21 1234 5600 0007 85",
-                                        value: iban,
-                                        oninput: move |e| iban.set(e.value()),
-                                    }
-                                }
-                                div { class: "field-block",
-                                    label { class: "field-label", r#for: "ba-account", "Ledger account" }
-                                    select {
-                                        id: "ba-account",
-                                        class: "select",
-                                        required: true,
-                                        onchange: move |e| internal_account_id_str.set(e.value()),
-                                        option {
-                                            value: "",
-                                            disabled: true,
-                                            selected: internal_account_id_str().is_empty(),
-                                            "Select a ledger account"
-                                        }
-                                        for acc in internal_accounts.iter() {
-                                            option {
-                                                value: "{acc.id}",
-                                                selected: internal_account_id_str() == acc.id.to_string(),
-                                                {
-                                                    match acc.code.as_deref() {
-                                                        Some(code) => format!("{} - {}", code, acc.name),
-                                                        None => acc.name.clone(),
-                                                    }
-                                                }
+                                for acc in internal_accounts.iter() {
+                                    option {
+                                        value: "{acc.id}",
+                                        selected: internal_account_id_str() == acc.id.to_string(),
+                                        {
+                                            match acc.code.as_deref() {
+                                                Some(code) => format!("{} - {}", code, acc.name),
+                                                None => acc.name.clone(),
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+                }
 
-                        div { class: "actions-row justify-end",
-                            button {
-                                class: "btn btn-primary",
-                                r#type: "submit",
-                                disabled: submitting(),
-                                if submitting() { "Adding..." } else { "Add account" }
-                            }
-                        }
+                div { class: "actions-row justify-end",
+                    button {
+                        class: "btn btn-primary",
+                        r#type: "submit",
+                        disabled: submitting,
+                        if submitting { "Saving..." } else { "Save manual account" }
                     }
                 }
             }
         }
+    }
+}
+
+#[component]
+pub fn NewBankAccount() -> Element {
+    rsx! {
+        crate::views::bank_connect::BankConnect { source_id: None }
     }
 }

@@ -122,6 +122,8 @@ pub trait BankSyncProvider: Send + Sync {
 /// Minimal information about an ASPSP (bank), safe to display in the UI.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AspspInfo {
+    /// Provider-specific stable institution identifier when available.
+    pub institution_id: Option<String>,
     pub name: String,
     pub country: String,
     /// Some providers include a logo URL.

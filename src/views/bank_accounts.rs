@@ -70,10 +70,7 @@ pub async fn list_bank_accounts() -> Result<Vec<BankAccountSummary>, ServerFnErr
 pub async fn sync_bank_account(id: Uuid) -> Result<SyncResult, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::{
-            bank_sync::{provider::BankSyncProvider, EnableBankingProvider},
-            server::auth::{extract_context, require_auth},
-        };
+        use crate::server::auth::{extract_context, require_auth};
 
         let (pool, cookies) = extract_context().await?;
         let user_id = require_auth(&pool, &cookies).await?;
@@ -115,15 +112,7 @@ pub async fn sync_bank_account(id: Uuid) -> Result<SyncResult, ServerFnError> {
             .provider_account_uid
             .ok_or_else(|| ServerFnError::new("Bank account has no provider account UID"))?;
 
-        // Resolve the provider.
-        if provider_id != "enable_banking" {
-            return Err(ServerFnError::new(format!(
-                "Unknown bank sync provider: {}",
-                provider_id
-            )));
-        }
-        let provider =
-            EnableBankingProvider::from_env().map_err(|e| ServerFnError::new(e.to_string()))?;
+        let provider = crate::bank_sync::get_provider(&provider_id).await?;
 
         let since = record.last_synced_at.map(|dt| dt.date_naive());
 
@@ -263,7 +252,7 @@ pub fn BankAccounts() -> Element {
                     }
                     Link {
                         class: "btn btn-primary",
-                        to: crate::Route::BankConnect {},
+                        to: crate::Route::BankConnect { source_id: None },
                         "Connect bank"
                     }
                 }
@@ -354,7 +343,15 @@ pub fn BankAccounts() -> Element {
                                                 },
                                                 "View"
                                             }
-                                            if !account.is_manual {
+                                            if account.is_manual {
+                                                Link {
+                                                    class: "btn btn-secondary btn-sm",
+                                                    to: crate::Route::BankConnect {
+                                                        source_id: Some(account.id),
+                                                    },
+                                                    "Connect"
+                                                }
+                                            } else {
                                                 Button {
                                                     class: "btn btn-secondary btn-sm".to_string(),
                                                     disabled: syncing() == Some(account.id),
@@ -368,7 +365,7 @@ pub fn BankAccounts() -> Element {
                                                 if account.is_expired() {
                                                     Link {
                                                         class: "btn btn-secondary btn-sm",
-                                                        to: crate::Route::BankConnect {},
+                                                        to: crate::Route::BankConnect { source_id: None },
                                                         "Reconnect"
                                                     }
                                                 }

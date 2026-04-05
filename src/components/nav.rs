@@ -63,7 +63,7 @@ fn active_nav_class(route: &crate::Route, item: &str) -> &'static str {
         | (crate::Route::NewTransactionFromBank { .. }, "transactions") => "nav-link is-active",
         (crate::Route::BankAccounts {}, "bank_accounts")
         | (crate::Route::BankAccountDetail { .. }, "bank_accounts")
-        | (crate::Route::BankConnect {}, "bank_accounts")
+        | (crate::Route::BankConnect { .. }, "bank_accounts")
         | (crate::Route::BankAccountMap { .. }, "bank_accounts") => "nav-link is-active",
         _ => "nav-link",
     }
@@ -81,7 +81,7 @@ fn topbar_title(route: &crate::Route) -> &'static str {
         | crate::Route::EditTransaction { .. } => "Transactions",
         crate::Route::BankAccounts {} => "Bank Accounts",
         crate::Route::BankAccountDetail { .. } => "Bank Account",
-        crate::Route::BankConnect {} => "Connect a Bank",
+        crate::Route::BankConnect { .. } => "Connect a Bank",
         crate::Route::BankAccountMap { .. } => "Map Bank Accounts",
         _ => "OxiLedger",
     }

@@ -79,6 +79,11 @@ impl EnableBankingProvider {
         })
     }
 
+    pub fn is_configured() -> bool {
+        std::env::var("ENABLE_BANKING_APP_ID").is_ok()
+            && std::env::var("ENABLE_BANKING_PRIVATE_KEY_PATH").is_ok()
+    }
+
     /// Build a short-lived JWT (5-minute TTL) for a single API request.
     fn make_jwt(&self) -> Result<String, BankSyncError> {
         let now = jsonwebtoken::get_current_timestamp();
@@ -295,6 +300,7 @@ impl BankSyncProvider for EnableBankingProvider {
             .aspsps
             .into_iter()
             .map(|a| AspspInfo {
+                institution_id: None,
                 name: a.name,
                 country: a.country,
                 logo_url: a.logo,

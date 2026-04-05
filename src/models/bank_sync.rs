@@ -190,6 +190,7 @@ pub use crate::bank_sync::provider::AspspInfo;
 #[cfg(not(feature = "server"))]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AspspInfo {
+    pub institution_id: Option<String>,
     pub name: String,
     pub country: String,
     pub logo_url: Option<String>,
