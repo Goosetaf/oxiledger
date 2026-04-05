@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                ba.id,\n                ba.name,\n                ba.iban,\n                ba.currency,\n                ba.internal_account_id,\n                a.name AS internal_account_name,\n                bc.aspsp_name,\n                bc.aspsp_country,\n                bc.provider_id,\n                bc.access_valid_until,\n                ba.last_synced_at\n            FROM bank_accounts ba\n            JOIN bank_connections bc ON bc.id = ba.bank_connection_id\n            JOIN accounts a ON a.id = ba.internal_account_id\n            WHERE ba.user_id = $1\n            ORDER BY bc.aspsp_name, ba.name\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "iban",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "internal_account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "internal_account_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "aspsp_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "aspsp_country",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "provider_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "access_valid_until",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "last_synced_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "bec1dd4704b74588bcbf2e5617bcdb5eab872724394c1f28eccdaed9e90eab2a"
+}

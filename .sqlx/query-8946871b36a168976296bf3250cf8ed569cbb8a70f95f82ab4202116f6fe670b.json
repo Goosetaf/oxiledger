@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bt.id, bt.date, bt.amount, bt.description, bt.reference,\n                      ba.internal_account_id, a.name AS internal_account_name,\n                      bt.currency\n               FROM bank_transactions bt\n               JOIN bank_accounts ba ON ba.id = bt.bank_account_id\n               JOIN accounts a ON a.id = ba.internal_account_id\n               WHERE bt.id = $1 AND bt.user_id = $2 AND bt.status = 'pending'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "reference",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "internal_account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "internal_account_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "currency",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8946871b36a168976296bf3250cf8ed569cbb8a70f95f82ab4202116f6fe670b"
+}

@@ -8,6 +8,7 @@ use crate::{
 use dioxus::prelude::*;
 use rust_decimal::Decimal;
 use std::str::FromStr;
+use uuid::Uuid;
 
 #[derive(Clone, PartialEq)]
 pub struct EntryRow {
@@ -15,6 +16,10 @@ pub struct EntryRow {
     pub memo: String,
     pub debit_amount_str: String,
     pub credit_amount_str: String,
+    /// When `Some`, this row is locked — it came from an imported bank transaction
+    /// and cannot be edited by the user. It can only be removed (with confirmation),
+    /// which unlinks the bank transaction and resets it to `pending`.
+    pub locked_bank_transaction_id: Option<Uuid>,
 }
 
 impl EntryRow {
@@ -24,6 +29,7 @@ impl EntryRow {
             memo: String::new(),
             debit_amount_str: String::new(),
             credit_amount_str: String::new(),
+            locked_bank_transaction_id: None,
         }
     }
 
@@ -34,14 +40,20 @@ impl EntryRow {
                 memo: entry.memo.clone().unwrap_or_default(),
                 debit_amount_str: entry.amount.to_string(),
                 credit_amount_str: String::new(),
+                locked_bank_transaction_id: entry.bank_transaction_id,
             },
             EntryType::Credit => Self {
                 account_id_str: entry.account_id.to_string(),
                 memo: entry.memo.clone().unwrap_or_default(),
                 debit_amount_str: String::new(),
                 credit_amount_str: entry.amount.to_string(),
+                locked_bank_transaction_id: entry.bank_transaction_id,
             },
         }
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.locked_bank_transaction_id.is_some()
     }
 
     pub fn parse_amount(amount_str: &str) -> Option<Decimal> {
@@ -129,6 +141,18 @@ pub fn TransactionForm(
     };
 
     let mut handle_remove_row = move |index: usize| {
+        let rows = entry_rows.read();
+        let is_locked = rows.get(index).map(|r| r.is_locked()).unwrap_or(false);
+        drop(rows);
+        // Locked rows require a confirm dialog before removal.
+        if is_locked {
+            let confirmed = web_sys_confirm(
+                "This row is linked to a bank transaction. Removing it will unlink the bank transaction and reset it to pending. Continue?",
+            );
+            if !confirmed {
+                return;
+            }
+        }
         let mut rows = entry_rows.write();
         if rows.len() > 2 {
             rows.remove(index);
@@ -231,15 +255,25 @@ pub fn TransactionForm(
 
                             div { class: "entry-list",
                                 for (index , row) in entry_rows().iter().cloned().enumerate() {
-                                    div { class: "entry-row",
+                                    div { class: if row.is_locked() { "entry-row entry-row-locked" } else { "entry-row" },
                                         div { class: "entry-grid",
                                             div { class: "field-block",
-                                                label { class: "field-label", "Account" }
+                                                label { class: "field-label",
+                                                    "Account"
+                                                    if row.is_locked() {
+                                                        span { class: "badge badge-info",
+                                                            "Bank"
+                                                        }
+                                                    }
+                                                }
                                                 select {
                                                     class: "select",
                                                     r#autocomplete: "off",
+                                                    disabled: row.is_locked(),
                                                     onchange: move |e| {
-                                                        entry_rows.write()[index].account_id_str = e.value();
+                                                        if !entry_rows.read()[index].is_locked() {
+                                                            entry_rows.write()[index].account_id_str = e.value();
+                                                        }
                                                     },
                                                     option {
                                                         value: "",
@@ -265,8 +299,11 @@ pub fn TransactionForm(
                                                     r#autocomplete: "off",
                                                     placeholder: "Optional note",
                                                     value: row.memo.clone(),
+                                                    readonly: row.is_locked(),
                                                     oninput: move |e| {
-                                                        entry_rows.write()[index].memo = e.value();
+                                                        if !entry_rows.read()[index].is_locked() {
+                                                            entry_rows.write()[index].memo = e.value();
+                                                        }
                                                     },
                                                 }
                                             }
@@ -280,7 +317,11 @@ pub fn TransactionForm(
                                                     inputmode: "decimal",
                                                     placeholder: "0.00",
                                                     value: row.debit_amount_str.clone(),
+                                                    readonly: row.is_locked(),
                                                     oninput: move |e| {
+                                                        if entry_rows.read()[index].is_locked() {
+                                                            return;
+                                                        }
                                                         let value = e.value();
                                                         let mut rows = entry_rows.write();
                                                         rows[index].debit_amount_str = value;
@@ -300,7 +341,11 @@ pub fn TransactionForm(
                                                     inputmode: "decimal",
                                                     placeholder: "0.00",
                                                     value: row.credit_amount_str.clone(),
+                                                    readonly: row.is_locked(),
                                                     oninput: move |e| {
+                                                        if entry_rows.read()[index].is_locked() {
+                                                            return;
+                                                        }
                                                         let value = e.value();
                                                         let mut rows = entry_rows.write();
                                                         rows[index].credit_amount_str = value;
@@ -314,10 +359,14 @@ pub fn TransactionForm(
                                             div { class: "field-block align-end",
                                                 Button {
                                                     r#type: "button",
-                                                    class: "btn btn-danger btn-sm".to_string(),
+                                                    class: if row.is_locked() { "btn btn-warning btn-sm".to_string() } else { "btn btn-danger btn-sm".to_string() },
                                                     aria_label: "Remove entry row".to_string(),
                                                     onclick: move |_| handle_remove_row(index),
-                                                    "Remove"
+                                                    if row.is_locked() {
+                                                        "Unlink"
+                                                    } else {
+                                                        "Remove"
+                                                    }
                                                 }
                                             }
                                         }
@@ -361,4 +410,18 @@ pub fn TransactionForm(
             }
         }
     }
+}
+
+/// Show a browser confirm dialog; returns `true` if the user clicked OK.
+/// Returns `true` unconditionally outside the web feature (e.g. SSR).
+fn web_sys_confirm(message: &str) -> bool {
+    #[cfg(feature = "web")]
+    {
+        use web_sys::window;
+        if let Some(win) = window() {
+            return win.confirm_with_message(message).unwrap_or(false);
+        }
+    }
+    let _ = message;
+    true
 }

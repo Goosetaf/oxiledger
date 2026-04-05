@@ -1,6 +1,8 @@
 use dioxus::prelude::*;
 use uuid::Uuid;
 
+#[cfg(feature = "server")]
+mod bank_sync;
 mod components;
 mod models;
 #[cfg(feature = "server")]
@@ -12,6 +14,9 @@ use views::{
     account_edit::EditAccount,
     account_new::NewAccount,
     accounts::Accounts,
+    bank_account_detail::BankAccountDetail,
+    bank_accounts::BankAccounts,
+    bank_connect::{BankAccountMap, BankConnect},
     dashboard::Dashboard,
     error::AppErrorPage,
     login::Login,
@@ -19,7 +24,7 @@ use views::{
     oidc::{OidcCallback, OidcLogin},
     register::Register,
     transaction_edit::EditTransaction,
-    transaction_new::NewTransaction,
+    transaction_new::{NewTransaction, NewTransactionFromBank},
     transactions::Transactions,
 };
 
@@ -57,8 +62,19 @@ enum Route {
             Transactions {},
             #[route("/transactions/new")]
             NewTransaction {},
+            #[route("/transactions/new/from-bank/:bank_txn_id")]
+            NewTransactionFromBank { bank_txn_id: Uuid },
             #[route("/transactions/:id/edit")]
             EditTransaction { id: Uuid },
+            // Bank sync routes
+            #[route("/bank-accounts")]
+            BankAccounts {},
+            #[route("/bank-accounts/:id")]
+            BankAccountDetail { id: Uuid },
+            #[route("/bank-accounts/connect")]
+            BankConnect {},
+            #[route("/bank-accounts/connect/map?:connection_id")]
+            BankAccountMap { connection_id: Uuid },
         #[route("/:..segments")]
         NotFound { segments: Vec<String> },
 }
@@ -121,6 +137,10 @@ fn server_main() {
             .route(
                 "/auth/oidc/callback",
                 axum::routing::get(server::oidc::handle_callback),
+            )
+            .route(
+                "/bank-sync/callback",
+                axum::routing::get(views::bank_connect::callback::handle_callback),
             )
             .layer(CookieManagerLayer::new())
             .layer(Extension(oidc_config))

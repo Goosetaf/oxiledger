@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bank_accounts\n                (user_id, bank_connection_id, internal_account_id,\n                 provider_account_uid, iban, name, currency)\n            VALUES ($1, $2, $3, $4, $5, $6, $7)\n            ON CONFLICT (bank_connection_id, provider_account_uid)\n                DO UPDATE SET\n                    internal_account_id = EXCLUDED.internal_account_id,\n                    iban = EXCLUDED.iban,\n                    name = EXCLUDED.name,\n                    currency = EXCLUDED.currency\n            RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9864d24bc8f2a5ece25eb770338e066dda8c5a24cd8868b3fdf92474a16aa957"
+}

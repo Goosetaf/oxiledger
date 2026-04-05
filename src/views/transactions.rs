@@ -62,6 +62,7 @@ async fn list_transactions() -> Result<Vec<Transaction>, ServerFnError> {
                 entry_type: row.entry_type,
                 amount: row.amount,
                 memo: row.memo,
+                bank_transaction_id: None,
             };
 
             if let Some(txn) = txn_map.get_mut(&tid) {

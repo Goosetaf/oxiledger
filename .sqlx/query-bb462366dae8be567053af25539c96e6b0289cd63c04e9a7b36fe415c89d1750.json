@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                ba.internal_account_id,\n                ba.provider_account_uid,\n                bc.provider_id,\n                bc.provider_session_id\n            FROM bank_accounts ba\n            JOIN bank_connections bc ON bc.id = ba.bank_connection_id\n            WHERE ba.id = $1 AND ba.user_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "internal_account_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider_account_uid",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "provider_session_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bb462366dae8be567053af25539c96e6b0289cd63c04e9a7b36fe415c89d1750"
+}

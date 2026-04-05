@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO bank_transactions\n                    (bank_account_id, user_id, external_id, date, amount, currency,\n                     description, reference)\n                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n                ON CONFLICT (bank_account_id, external_id) DO NOTHING\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Date",
+        "Numeric",
+        "Varchar",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "59e37bd6c3b6456b5534f90940bc04a19eadc96b3ec5e0a80b2b5e29def0d55a"
+}
