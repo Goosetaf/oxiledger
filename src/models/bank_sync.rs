@@ -33,9 +33,11 @@ impl BankConnection {
 pub struct BankAccountRecord {
     pub id: Uuid,
     pub user_id: Uuid,
-    pub bank_connection_id: Uuid,
+    /// `None` for manually-created accounts.
+    pub bank_connection_id: Option<Uuid>,
     pub internal_account_id: Uuid,
-    pub provider_account_uid: String,
+    /// `None` for manually-created accounts.
+    pub provider_account_uid: Option<String>,
     pub iban: Option<String>,
     pub name: Option<String>,
     pub currency: String,
@@ -55,13 +57,19 @@ pub struct BankAccountSummary {
     pub internal_account_name: String,
     pub aspsp_name: Option<String>,
     pub aspsp_country: Option<String>,
-    pub provider_id: String,
+    /// `None` for manually-created accounts.
+    pub provider_id: Option<String>,
     pub access_valid_until: Option<DateTime<Utc>>,
     pub last_synced_at: Option<DateTime<Utc>>,
+    /// `true` when the account was added without an external provider.
+    pub is_manual: bool,
 }
 
 impl BankAccountSummary {
     pub fn is_expired(&self) -> bool {
+        if self.is_manual {
+            return false;
+        }
         match self.access_valid_until {
             Some(until) => Utc::now() >= until,
             None => false,

@@ -22,17 +22,18 @@ pub async fn list_bank_accounts() -> Result<Vec<BankAccountSummary>, ServerFnErr
                 ba.iban,
                 ba.currency,
                 ba.internal_account_id,
+                ba.is_manual,
                 a.name AS internal_account_name,
                 bc.aspsp_name,
                 bc.aspsp_country,
-                bc.provider_id,
+                bc.provider_id AS "provider_id?: String",
                 bc.access_valid_until,
                 ba.last_synced_at
             FROM bank_accounts ba
-            JOIN bank_connections bc ON bc.id = ba.bank_connection_id
+            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
             JOIN accounts a ON a.id = ba.internal_account_id
             WHERE ba.user_id = $1
-            ORDER BY bc.aspsp_name, ba.name
+            ORDER BY COALESCE(bc.aspsp_name, ba.name), ba.name
             "#,
             user_id
         )
@@ -54,6 +55,7 @@ pub async fn list_bank_accounts() -> Result<Vec<BankAccountSummary>, ServerFnErr
                 provider_id: r.provider_id,
                 access_valid_until: r.access_valid_until,
                 last_synced_at: r.last_synced_at,
+                is_manual: r.is_manual,
             })
             .collect();
 
@@ -82,10 +84,11 @@ pub async fn sync_bank_account(id: Uuid) -> Result<SyncResult, ServerFnError> {
             SELECT
                 ba.provider_account_uid,
                 ba.last_synced_at,
-                bc.provider_id,
-                bc.provider_session_id
+                ba.is_manual,
+                bc.provider_id AS "provider_id?: String",
+                bc.provider_session_id AS "provider_session_id?: String"
             FROM bank_accounts ba
-            JOIN bank_connections bc ON bc.id = ba.bank_connection_id
+            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
             WHERE ba.id = $1 AND ba.user_id = $2
             "#,
             id,
@@ -96,11 +99,27 @@ pub async fn sync_bank_account(id: Uuid) -> Result<SyncResult, ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?
         .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
+        if record.is_manual {
+            return Err(ServerFnError::new(
+                "Manual accounts do not support automatic sync.",
+            ));
+        }
+
+        let provider_id = record
+            .provider_id
+            .ok_or_else(|| ServerFnError::new("Bank account has no provider connection"))?;
+        let provider_session_id = record
+            .provider_session_id
+            .ok_or_else(|| ServerFnError::new("Bank account has no provider session"))?;
+        let provider_account_uid = record
+            .provider_account_uid
+            .ok_or_else(|| ServerFnError::new("Bank account has no provider account UID"))?;
+
         // Resolve the provider.
-        if record.provider_id != "enable_banking" {
+        if provider_id != "enable_banking" {
             return Err(ServerFnError::new(format!(
                 "Unknown bank sync provider: {}",
-                record.provider_id
+                provider_id
             )));
         }
         let provider =
@@ -109,11 +128,7 @@ pub async fn sync_bank_account(id: Uuid) -> Result<SyncResult, ServerFnError> {
         let since = record.last_synced_at.map(|dt| dt.date_naive());
 
         let transactions = provider
-            .fetch_transactions(
-                &record.provider_session_id,
-                &record.provider_account_uid,
-                since,
-            )
+            .fetch_transactions(&provider_session_id, &provider_account_uid, since)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -285,11 +300,15 @@ pub fn BankAccounts() -> Element {
                                 tr {
                                     td {
                                         div { class: "stack-sm",
-                                            span { class: "label-strong",
-                                                {account.aspsp_name.as_deref().unwrap_or("Unknown bank")}
-                                            }
-                                            if let Some(country) = account.aspsp_country.as_deref() {
-                                                span { class: "tiny-text muted", "{country}" }
+                                            if account.is_manual {
+                                                span { class: "chip chip-neutral", "Manual" }
+                                            } else {
+                                                span { class: "label-strong",
+                                                    {account.aspsp_name.as_deref().unwrap_or("Unknown bank")}
+                                                }
+                                                if let Some(country) = account.aspsp_country.as_deref() {
+                                                    span { class: "tiny-text muted", "{country}" }
+                                                }
                                             }
                                         }
                                     }
@@ -306,15 +325,21 @@ pub fn BankAccounts() -> Element {
                                     }
                                     td { class: "muted", "{account.internal_account_name}" }
                                     td { class: "muted",
-                                        {
-                                            account
-                                                .last_synced_at
-                                                .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
-                                                .unwrap_or_else(|| "Never".into())
+                                        if account.is_manual {
+                                            "N/A"
+                                        } else {
+                                            {
+                                                account
+                                                    .last_synced_at
+                                                    .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                                                    .unwrap_or_else(|| "Never".into())
+                                            }
                                         }
                                     }
                                     td {
-                                        if account.is_expired() {
+                                        if account.is_manual {
+                                            span { class: "chip chip-neutral", "Manual" }
+                                        } else if account.is_expired() {
                                             span { class: "chip chip-warning", "Expired" }
                                         } else {
                                             span { class: "chip chip-positive", "Active" }
@@ -329,21 +354,23 @@ pub fn BankAccounts() -> Element {
                                                 },
                                                 "View"
                                             }
-                                            Button {
-                                                class: "btn btn-secondary btn-sm".to_string(),
-                                                disabled: syncing() == Some(account.id),
-                                                onclick: move |_| handle_sync(account.id),
-                                                if syncing() == Some(account.id) {
-                                                    "Syncing..."
-                                                } else {
-                                                    "Sync"
+                                            if !account.is_manual {
+                                                Button {
+                                                    class: "btn btn-secondary btn-sm".to_string(),
+                                                    disabled: syncing() == Some(account.id),
+                                                    onclick: move |_| handle_sync(account.id),
+                                                    if syncing() == Some(account.id) {
+                                                        "Syncing..."
+                                                    } else {
+                                                        "Sync"
+                                                    }
                                                 }
-                                            }
-                                            if account.is_expired() {
-                                                Link {
-                                                    class: "btn btn-secondary btn-sm",
-                                                    to: crate::Route::BankConnect {},
-                                                    "Reconnect"
+                                                if account.is_expired() {
+                                                    Link {
+                                                        class: "btn btn-secondary btn-sm",
+                                                        to: crate::Route::BankConnect {},
+                                                        "Reconnect"
+                                                    }
                                                 }
                                             }
                                             Button {

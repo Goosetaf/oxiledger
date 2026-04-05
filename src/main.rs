@@ -15,6 +15,7 @@ use views::{
     account_new::NewAccount,
     accounts::Accounts,
     bank_account_detail::BankAccountDetail,
+    bank_account_new::NewBankAccount,
     bank_accounts::BankAccounts,
     bank_connect::{BankAccountMap, BankConnect},
     dashboard::Dashboard,
@@ -69,6 +70,8 @@ enum Route {
             // Bank sync routes
             #[route("/bank-accounts")]
             BankAccounts {},
+            #[route("/bank-accounts/new")]
+            NewBankAccount {},
             #[route("/bank-accounts/:id")]
             BankAccountDetail { id: Uuid },
             #[route("/bank-accounts/connect")]

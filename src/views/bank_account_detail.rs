@@ -25,14 +25,15 @@ pub async fn get_bank_account_detail(id: Uuid) -> Result<BankAccountSummary, Ser
                 ba.iban,
                 ba.currency,
                 ba.internal_account_id,
+                ba.is_manual,
                 a.name AS internal_account_name,
                 bc.aspsp_name,
                 bc.aspsp_country,
-                bc.provider_id,
+                bc.provider_id AS "provider_id?: String",
                 bc.access_valid_until,
                 ba.last_synced_at
             FROM bank_accounts ba
-            JOIN bank_connections bc ON bc.id = ba.bank_connection_id
+            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
             JOIN accounts a ON a.id = ba.internal_account_id
             WHERE ba.id = $1 AND ba.user_id = $2
             "#,
@@ -56,6 +57,7 @@ pub async fn get_bank_account_detail(id: Uuid) -> Result<BankAccountSummary, Ser
             provider_id: row.provider_id,
             access_valid_until: row.access_valid_until,
             last_synced_at: row.last_synced_at,
+            is_manual: row.is_manual,
         });
     }
 
@@ -83,10 +85,11 @@ pub async fn get_bank_account_balance(
             SELECT
                 ba.internal_account_id,
                 ba.provider_account_uid,
-                bc.provider_id,
-                bc.provider_session_id
+                ba.is_manual,
+                bc.provider_id AS "provider_id?: String",
+                bc.provider_session_id AS "provider_session_id?: String"
             FROM bank_accounts ba
-            JOIN bank_connections bc ON bc.id = ba.bank_connection_id
+            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
             WHERE ba.id = $1 AND ba.user_id = $2
             "#,
             id,
@@ -119,18 +122,39 @@ pub async fn get_bank_account_balance(
 
         let internal_balance = bal_row.debit_sum - bal_row.credit_sum;
 
+        // Manual accounts have no live balance from a provider.
+        if record.is_manual {
+            return Ok(BankAccountBalanceComparison {
+                bank_account_id: id,
+                internal_balance,
+                bank_balance: None,
+                bank_balance_currency: None,
+                difference: None,
+            });
+        }
+
         // Fetch live balance from the provider.
-        if record.provider_id != "enable_banking" {
+        let provider_id = record
+            .provider_id
+            .ok_or_else(|| ServerFnError::new("No provider connection"))?;
+        let provider_session_id = record
+            .provider_session_id
+            .ok_or_else(|| ServerFnError::new("No provider session"))?;
+        let provider_account_uid = record
+            .provider_account_uid
+            .ok_or_else(|| ServerFnError::new("No provider account UID"))?;
+
+        if provider_id != "enable_banking" {
             return Err(ServerFnError::new(format!(
                 "Unknown bank sync provider: {}",
-                record.provider_id
+                provider_id
             )));
         }
         let provider =
             EnableBankingProvider::from_env().map_err(|e| ServerFnError::new(e.to_string()))?;
 
         let balances = provider
-            .get_balances(&record.provider_session_id, &record.provider_account_uid)
+            .get_balances(&provider_session_id, &provider_account_uid)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -297,6 +321,7 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
 
     let txns = txns_resource.read().clone();
     let account_name = account.display_name().to_string();
+    let is_manual = account.is_manual;
 
     rsx! {
         div { class: "app-container",
@@ -306,11 +331,15 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                         h1 { class: "section-title", "{account_name}" }
                         p { class: "section-subtitle",
                             {
-                                format!(
-                                    "{} · {}",
-                                    account.aspsp_name.as_deref().unwrap_or("Unknown bank"),
-                                    account.currency,
-                                )
+                                if is_manual {
+                                    format!("Manual · {}", account.currency)
+                                } else {
+                                    format!(
+                                        "{} · {}",
+                                        account.aspsp_name.as_deref().unwrap_or("Unknown bank"),
+                                        account.currency,
+                                    )
+                                }
                             }
                         }
                         if let Some(iban) = account.iban.as_deref() {
@@ -318,14 +347,16 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                         }
                     }
                     div { class: "actions-row",
-                        Button {
-                            class: "btn btn-secondary".to_string(),
-                            disabled: syncing(),
-                            onclick: handle_sync,
-                            if syncing() {
-                                "Syncing..."
-                            } else {
-                                "Sync now"
+                        if !is_manual {
+                            Button {
+                                class: "btn btn-secondary".to_string(),
+                                disabled: syncing(),
+                                onclick: handle_sync,
+                                if syncing() {
+                                    "Syncing..."
+                                } else {
+                                    "Sync now"
+                                }
                             }
                         }
                         Link {
@@ -346,7 +377,7 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                 // Balance comparison card.
                 section { class: "glass-card",
                     div { class: "section-header",
-                        h2 { class: "section-title", "Balance comparison" }
+                        h2 { class: "section-title", "Balance" }
                     }
                     match balance_resource() {
                         None => rsx! {
@@ -362,32 +393,34 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                     p { class: "metric-value mono", "{cmp.internal_balance}" }
                                     p { class: "tiny-text muted", "From ledger entries" }
                                 }
-                                article { class: "metric-card",
-                                    p { class: "metric-label", "Bank balance" }
-                                    if let Some(bank_bal) = cmp.bank_balance {
-                                        p { class: "metric-value mono", "{bank_bal}" }
-                                        if let Some(currency) = cmp.bank_balance_currency.as_deref() {
-                                            p { class: "tiny-text muted", "{currency} · from bank API" }
-                                        }
-                                    } else {
-                                        p { class: "metric-value muted", "Unavailable" }
-                                    }
-                                }
-                                article { class: "metric-card",
-                                    p { class: "metric-label", "Difference" }
-                                    if let Some(diff) = cmp.difference {
-                                        p { class: if diff == Decimal::ZERO { "metric-value text-positive" } else { "metric-value text-negative" },
-                                            "{diff}"
-                                        }
-                                        p { class: "tiny-text muted",
-                                            if diff == Decimal::ZERO {
-                                                "Balanced"
-                                            } else {
-                                                "Bank vs. ledger mismatch"
+                                if !is_manual {
+                                    article { class: "metric-card",
+                                        p { class: "metric-label", "Bank balance" }
+                                        if let Some(bank_bal) = cmp.bank_balance {
+                                            p { class: "metric-value mono", "{bank_bal}" }
+                                            if let Some(currency) = cmp.bank_balance_currency.as_deref() {
+                                                p { class: "tiny-text muted", "{currency} · from bank API" }
                                             }
+                                        } else {
+                                            p { class: "metric-value muted", "Unavailable" }
                                         }
-                                    } else {
-                                        p { class: "metric-value muted", "-" }
+                                    }
+                                    article { class: "metric-card",
+                                        p { class: "metric-label", "Difference" }
+                                        if let Some(diff) = cmp.difference {
+                                            p { class: if diff == Decimal::ZERO { "metric-value text-positive" } else { "metric-value text-negative" },
+                                                "{diff}"
+                                            }
+                                            p { class: "tiny-text muted",
+                                                if diff == Decimal::ZERO {
+                                                    "Balanced"
+                                                } else {
+                                                    "Bank vs. ledger mismatch"
+                                                }
+                                            }
+                                        } else {
+                                            p { class: "metric-value muted", "-" }
+                                        }
                                     }
                                 }
                             }

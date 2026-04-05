@@ -277,10 +277,86 @@ pub mod callback {
     }
 }
 
-// ── UI: ASPSP selection ────────────────────────────────────────────────────────
+// ── UI: Provider / method selection ──────────────────────────────────────────
 
+/// The top-level "connect a bank" page.
+/// Step 1: choose a provider (Enable Banking) or add manually.
+/// Step 2 (if Enable Banking): pick an ASPSP from the list.
 #[component]
 pub fn BankConnect() -> Element {
+    // "enable_banking" | "manual" | "" (not yet chosen)
+    let mut chosen_provider = use_signal(|| "".to_string());
+
+    rsx! {
+        div { class: "app-container",
+            div { class: "page-stack",
+                div { class: "section-header",
+                    div {
+                        h1 { class: "section-title", "Add a bank account" }
+                        p { class: "section-subtitle",
+                            "Choose how you want to add a bank account."
+                        }
+                    }
+                    Link {
+                        class: "btn btn-secondary",
+                        to: crate::Route::BankAccounts {},
+                        "Cancel"
+                    }
+                }
+
+                if chosen_provider().is_empty() {
+                    // ── Step 1: method selection ──────────────────────────────
+                    section { class: "glass-card",
+                        div { class: "stack-lg",
+                            div { class: "form-grid two-up",
+                                // Manual option
+                                div { class: "glass-card",
+                                    div { class: "stack-sm",
+                                        h3 { class: "section-title", "Add manually" }
+                                        p { class: "supporting-text",
+                                            "Create a bank account without connecting to any external provider. You can record transactions by hand."
+                                        }
+                                    }
+                                    div { class: "actions-row",
+                                        Link {
+                                            class: "btn btn-primary",
+                                            to: crate::Route::NewBankAccount {},
+                                            "Add manually"
+                                        }
+                                    }
+                                }
+                                // Enable Banking option
+                                div { class: "glass-card",
+                                    div { class: "stack-sm",
+                                        h3 { class: "section-title", "Connect via Enable Banking" }
+                                        p { class: "supporting-text",
+                                            "Connect to your bank using Enable Banking to automatically import transactions."
+                                        }
+                                    }
+                                    div { class: "actions-row",
+                                        button {
+                                            class: "btn btn-primary",
+                                            r#type: "button",
+                                            onclick: move |_| chosen_provider.set("enable_banking".to_string()),
+                                            "Connect via Enable Banking"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // ── Step 2: ASPSP selection for Enable Banking ───────────
+                    BankConnectAspsp {}
+                }
+            }
+        }
+    }
+}
+
+/// The ASPSP browser shown after the user picks Enable Banking.
+#[component]
+fn BankConnectAspsp() -> Element {
     let mut country_filter = use_signal(String::new);
     let aspsps_resource = use_resource(move || {
         let country = country_filter();
@@ -323,11 +399,7 @@ pub fn BankConnect() -> Element {
         Some(Ok(list)) => list,
         Some(Err(err)) => {
             return rsx! {
-                div { class: "app-container",
-                    div { class: "page-stack",
-                        div { class: "message message-error", "Failed to load banks: {err}" }
-                    }
-                }
+                div { class: "message message-error", "Failed to load banks: {err}" }
             };
         }
         None => vec![],
@@ -344,91 +416,73 @@ pub fn BankConnect() -> Element {
         .collect();
 
     rsx! {
-        div { class: "app-container",
-            div { class: "page-stack",
-                div { class: "section-header",
-                    div {
-                        h1 { class: "section-title", "Connect a bank" }
-                        p { class: "section-subtitle",
-                            "Select your bank to begin the authorization process."
-                        }
-                    }
-                    Link {
-                        class: "btn btn-secondary",
-                        to: crate::Route::BankAccounts {},
-                        "Cancel"
+        if let Some(err) = select_error() {
+            div { class: "message message-error", "{err}" }
+        }
+        if selecting() {
+            div { class: "message message-info", "Redirecting to bank authorization..." }
+        }
+
+        section { class: "glass-card",
+            div { class: "form-grid three-up",
+                div { class: "field-block",
+                    label { class: "field-label", r#for: "country-filter", "Country (ISO)" }
+                    input {
+                        id: "country-filter",
+                        class: "input",
+                        r#type: "text",
+                        placeholder: "e.g. FI, SE, DE",
+                        maxlength: 2,
+                        value: country_filter,
+                        oninput: move |e| country_filter.set(e.value()),
                     }
                 }
-
-                if let Some(err) = select_error() {
-                    div { class: "message message-error", "{err}" }
+                div { class: "field-block",
+                    label { class: "field-label", r#for: "bank-search", "Search" }
+                    input {
+                        id: "bank-search",
+                        class: "input",
+                        r#type: "text",
+                        placeholder: "Search by bank name...",
+                        value: search_text,
+                        oninput: move |e| search_text.set(e.value()),
+                    }
                 }
-                if selecting() {
-                    div { class: "message message-info", "Redirecting to bank authorization..." }
-                }
+            }
 
-                section { class: "glass-card",
-                    div { class: "form-grid three-up",
-                        div { class: "field-block",
-                            label { class: "field-label", r#for: "country-filter", "Country (ISO)" }
-                            input {
-                                id: "country-filter",
-                                class: "input",
-                                r#type: "text",
-                                placeholder: "e.g. FI, SE, DE",
-                                maxlength: 2,
-                                value: country_filter,
-                                oninput: move |e| country_filter.set(e.value()),
-                            }
-                        }
-                        div { class: "field-block",
-                            label { class: "field-label", r#for: "bank-search", "Search" }
-                            input {
-                                id: "bank-search",
-                                class: "input",
-                                r#type: "text",
-                                placeholder: "Search by bank name...",
-                                value: search_text,
-                                oninput: move |e| search_text.set(e.value()),
-                            }
+            if aspsps_resource().is_none() {
+                div { class: "message message-info", "Loading banks..." }
+            } else if filtered.is_empty() {
+                div { class: "empty-state",
+                    p { class: "supporting-text", "No banks found matching your filter." }
+                }
+            } else {
+                table { class: "data-table",
+                    thead {
+                        tr {
+                            th { "Bank" }
+                            th { "Country" }
+                            th { class: "col-right", "Action" }
                         }
                     }
-
-                    if aspsps_resource().is_none() {
-                        div { class: "message message-info", "Loading banks..." }
-                    } else if filtered.is_empty() {
-                        div { class: "empty-state",
-                            p { class: "supporting-text", "No banks found matching your filter." }
-                        }
-                    } else {
-                        table { class: "data-table",
-                            thead {
-                                tr {
-                                    th { "Bank" }
-                                    th { "Country" }
-                                    th { class: "col-right", "Action" }
+                    tbody {
+                        for aspsp in filtered {
+                            tr {
+                                td {
+                                    div { class: "stack-sm",
+                                        span { class: "label-strong", "{aspsp.name}" }
+                                    }
                                 }
-                            }
-                            tbody {
-                                for aspsp in filtered {
-                                    tr {
-                                        td {
-                                            div { class: "stack-sm",
-                                                span { class: "label-strong", "{aspsp.name}" }
-                                            }
-                                        }
-                                        td { class: "mono muted", "{aspsp.country}" }
-                                        td { class: "col-right",
-                                            Button {
-                                                class: "btn btn-primary btn-sm".to_string(),
-                                                disabled: selecting(),
-                                                onclick: {
-                                                    let aspsp = aspsp.clone();
-                                                    move |_| handle_select(aspsp.clone())
-                                                },
-                                                "Connect"
-                                            }
-                                        }
+                                td { class: "mono muted", "{aspsp.country}" }
+                                td { class: "col-right",
+                                    Button {
+                                        class: "btn btn-primary btn-sm".to_string(),
+                                        disabled: selecting(),
+                                        onclick: {
+                                            let aspsp = aspsp.clone();
+                                            move |_| handle_select(aspsp.clone())
+                                        },
+                                        "Connect"
                                     }
                                 }
                             }
@@ -531,6 +585,7 @@ pub async fn map_bank_account(
                  provider_account_uid, iban, name, currency)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (bank_connection_id, provider_account_uid)
+                WHERE bank_connection_id IS NOT NULL AND provider_account_uid IS NOT NULL
                 DO UPDATE SET
                     internal_account_id = EXCLUDED.internal_account_id,
                     iban = EXCLUDED.iban,
@@ -783,11 +838,14 @@ async fn get_provider_accounts_for_connection(
 
         let accounts = rows
             .into_iter()
-            .map(|r| crate::models::bank_sync::ProviderBankAccountInfo {
-                uid: r.provider_account_uid,
-                name: r.name,
-                iban: r.iban,
-                currency: r.currency,
+            .filter_map(|r| {
+                // Only include provider-connected accounts (manual accounts have no uid).
+                r.provider_account_uid.map(|uid| crate::models::bank_sync::ProviderBankAccountInfo {
+                    uid,
+                    name: r.name,
+                    iban: r.iban,
+                    currency: r.currency,
+                })
             })
             .collect();
 
