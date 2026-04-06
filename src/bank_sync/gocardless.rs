@@ -250,7 +250,12 @@ struct RequisitionResponse {
 
 #[derive(Deserialize)]
 struct AccountDetailsResponse {
-    #[serde(default)]
+    account: AccountDetails,
+}
+
+#[derive(Deserialize)]
+struct AccountDetails {
+    #[serde(default, rename = "displayName")]
     display_name: Option<String>,
     #[serde(default)]
     name: Option<String>,
@@ -266,7 +271,9 @@ struct BalancesResponse {
 
 #[derive(Deserialize)]
 struct BalanceEntry {
+    #[serde(rename = "balanceAmount")]
     balance_amount: AmountValue,
+    #[serde(rename = "balanceType")]
     balance_type: String,
 }
 
@@ -406,9 +413,9 @@ impl BankSyncProvider for GoCardlessProvider {
 
             accounts.push(ProviderBankAccount {
                 uid: account_id,
-                name: details.display_name.or(details.name),
-                iban: details.iban,
-                currency: details.currency,
+                name: details.account.display_name.or(details.account.name),
+                iban: details.account.iban,
+                currency: details.account.currency,
             });
         }
 
