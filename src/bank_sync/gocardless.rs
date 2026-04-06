@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     error::BankSyncError,
-    provider::{AspspInfo, BankSyncProvider, ProviderBalance, ProviderBankAccount, ProviderTransaction},
+    provider::{
+        AspspInfo, BankSyncProvider, ProviderBalance, ProviderBankAccount, ProviderTransaction,
+    },
 };
 
 const SANDBOX_BASE_URL: &str = "https://bankaccountdata.gocardless.com/api/v2";
@@ -50,7 +52,8 @@ impl GoCardlessProvider {
             .build()
             .map_err(|e| BankSyncError::Http(e.to_string()))?;
 
-        let refresh_token = Self::new_refresh_token(&http, &base_url, &secret_id, &secret_key).await?;
+        let refresh_token =
+            Self::new_refresh_token(&http, &base_url, &secret_id, &secret_key).await?;
 
         Ok(Self {
             base_url,
@@ -92,10 +95,9 @@ impl GoCardlessProvider {
 
     async fn access_token(&self) -> Result<String, BankSyncError> {
         {
-            let cache = self
-                .access_token
-                .lock()
-                .map_err(|_| BankSyncError::Provider("GoCardless token cache lock poisoned".into()))?;
+            let cache = self.access_token.lock().map_err(|_| {
+                BankSyncError::Provider("GoCardless token cache lock poisoned".into())
+            })?;
             if let Some(cached) = cache.as_ref() {
                 if Instant::now() < cached.expires_at {
                     return Ok(cached.value.clone());
@@ -133,7 +135,10 @@ impl GoCardlessProvider {
         Ok(token)
     }
 
-    async fn authorized_get<T: for<'de> Deserialize<'de>>(&self, url: String) -> Result<T, BankSyncError> {
+    async fn authorized_get<T: for<'de> Deserialize<'de>>(
+        &self,
+        url: String,
+    ) -> Result<T, BankSyncError> {
         let token = self.access_token().await?;
         let resp = self
             .http
@@ -358,11 +363,16 @@ impl BankSyncProvider for GoCardlessProvider {
 
     async fn list_aspsps(&self, country: Option<&str>) -> Result<Vec<AspspInfo>, BankSyncError> {
         let country = country.ok_or_else(|| {
-            BankSyncError::Provider("GoCardless requires a country filter to list institutions".into())
+            BankSyncError::Provider(
+                "GoCardless requires a country filter to list institutions".into(),
+            )
         })?;
 
         let entries: Vec<InstitutionEntry> = self
-            .authorized_get(format!("{}/institutions/?country={}", self.base_url, country))
+            .authorized_get(format!(
+                "{}/institutions/?country={}",
+                self.base_url, country
+            ))
             .await?;
 
         Ok(entries
@@ -370,7 +380,11 @@ impl BankSyncProvider for GoCardlessProvider {
             .map(|entry| AspspInfo {
                 institution_id: Some(entry.id),
                 name: entry.name,
-                country: entry.countries.into_iter().next().unwrap_or_else(|| country.to_string()),
+                country: entry
+                    .countries
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| country.to_string()),
                 logo_url: entry.logo,
             })
             .collect())
@@ -428,7 +442,10 @@ impl BankSyncProvider for GoCardlessProvider {
         account_uid: &str,
     ) -> Result<Vec<ProviderBalance>, BankSyncError> {
         let data: BalancesResponse = self
-            .authorized_get(format!("{}/accounts/{account_uid}/balances/", self.base_url))
+            .authorized_get(format!(
+                "{}/accounts/{account_uid}/balances/",
+                self.base_url
+            ))
             .await?;
 
         Ok(data

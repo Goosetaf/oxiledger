@@ -41,9 +41,7 @@ pub async fn create_manual_bank_account(
             return Err(ServerFnError::new("Ledger account not found"));
         }
 
-        let iban_opt = iban
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
+        let iban_opt = iban.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
 
         let id = sqlx::query_scalar!(
             r#"INSERT INTO bank_accounts
@@ -120,9 +118,7 @@ pub fn ManualBankAccountForm(
         }
 
         section { class: "editor-shell",
-            form {
-                class: "stack-lg",
-                onsubmit: handle_submit,
+            form { class: "stack-lg", onsubmit: handle_submit,
 
                 div { class: "glass-card",
                     div { class: "form-grid two-up",
@@ -197,7 +193,11 @@ pub fn ManualBankAccountForm(
                         class: "btn btn-primary",
                         r#type: "submit",
                         disabled: submitting,
-                        if submitting { "Saving..." } else { "Save manual account" }
+                        if submitting {
+                            "Saving..."
+                        } else {
+                            "Save manual account"
+                        }
                     }
                 }
             }

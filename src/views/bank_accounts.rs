@@ -252,7 +252,9 @@ pub fn BankAccounts() -> Element {
                     }
                     Link {
                         class: "btn btn-primary",
-                        to: crate::Route::BankConnect { source_id: None },
+                        to: crate::Route::BankConnect {
+                            source_id: None,
+                        },
                         "Connect bank"
                     }
                 }
@@ -296,7 +298,9 @@ pub fn BankAccounts() -> Element {
                                                     {account.aspsp_name.as_deref().unwrap_or("Unknown bank")}
                                                 }
                                                 if let Some(country) = account.aspsp_country.as_deref() {
-                                                    span { class: "tiny-text muted", "{country}" }
+                                                    span { class: "tiny-text muted",
+                                                        "{country}"
+                                                    }
                                                 }
                                             }
                                         }
@@ -365,7 +369,9 @@ pub fn BankAccounts() -> Element {
                                                 if account.is_expired() {
                                                     Link {
                                                         class: "btn btn-secondary btn-sm",
-                                                        to: crate::Route::BankConnect { source_id: None },
+                                                        to: crate::Route::BankConnect {
+                                                            source_id: None,
+                                                        },
                                                         "Reconnect"
                                                     }
                                                 }

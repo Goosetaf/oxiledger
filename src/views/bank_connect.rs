@@ -1,4 +1,7 @@
-use crate::{models::bank_sync::{AspspInfo, ProviderBankAccountInfo}, views::bank_account_new::ManualBankAccountFields};
+use crate::{
+    models::bank_sync::{AspspInfo, ProviderBankAccountInfo},
+    views::bank_account_new::ManualBankAccountFields,
+};
 use dioxus::prelude::*;
 use uuid::Uuid;
 
@@ -37,7 +40,10 @@ pub async fn list_aspsps(
         require_auth(&pool, &cookies).await?;
 
         let provider = crate::bank_sync::get_provider(&provider_id).await?;
-        return provider.list_aspsps(country.as_deref()).await.map_err(Into::into);
+        return provider
+            .list_aspsps(country.as_deref())
+            .await
+            .map_err(Into::into);
     }
 
     #[allow(unreachable_code)]
@@ -162,8 +168,8 @@ async fn get_connection_source_bank_account_id(
 #[cfg(feature = "server")]
 pub mod callback {
     use axum::response::{IntoResponse, Redirect, Response};
-    use sqlx::Row;
     use sqlx::PgPool;
+    use sqlx::Row;
 
     #[derive(serde::Deserialize)]
     pub struct BankCallbackParams {
@@ -243,7 +249,10 @@ pub mod callback {
             }
             Err(e) => {
                 eprintln!("[bank-sync] DB error fetching state: {e}");
-                return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Database error")
+                return (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database error",
+                )
                     .into_response();
             }
         };
@@ -476,11 +485,15 @@ pub async fn link_existing_bank_account(
         let source_bank_account_id: Option<Uuid> = existing.get("source_bank_account_id");
 
         if !is_manual {
-            return Err(ServerFnError::new("Only manual bank accounts can be connected"));
+            return Err(ServerFnError::new(
+                "Only manual bank accounts can be connected",
+            ));
         }
 
         if source_bank_account_id != Some(bank_account_id) {
-            return Err(ServerFnError::new("This connection was not started for that bank account"));
+            return Err(ServerFnError::new(
+                "This connection was not started for that bank account",
+            ));
         }
 
         sqlx::query!(
@@ -515,7 +528,8 @@ pub async fn link_existing_bank_account(
 pub fn BankConnect(source_id: Option<Uuid>) -> Element {
     let nav = use_navigator();
     let available_providers_resource = use_server_future(list_bank_sync_providers)?;
-    let internal_accounts_resource = use_resource(crate::views::transactions::list_accounts_for_txn);
+    let internal_accounts_resource =
+        use_resource(crate::views::transactions::list_accounts_for_txn);
 
     let mut selected_method = use_signal(|| {
         if source_id.is_some() {
@@ -530,7 +544,11 @@ pub fn BankConnect(source_id: Option<Uuid>) -> Element {
     let provider_options = match available_providers_resource() {
         Some(Ok(list)) => list,
         Some(Err(err)) => {
-            return rsx! { div { class: "app-container", div { class: "message message-error", "{err}" } } };
+            return rsx! {
+                div { class: "app-container",
+                    div { class: "message message-error", "{err}" }
+                }
+            };
         }
         None => vec![],
     };
@@ -567,7 +585,11 @@ pub fn BankConnect(source_id: Option<Uuid>) -> Element {
                 div { class: "section-header",
                     div {
                         h1 { class: "section-title",
-                            if source_id.is_some() { "Connect bank account" } else { "Add a bank account" }
+                            if source_id.is_some() {
+                                "Connect bank account"
+                            } else {
+                                "Add a bank account"
+                            }
                         }
                         p { class: "section-subtitle",
                             if source_id.is_some() {
@@ -597,20 +619,18 @@ pub fn BankConnect(source_id: Option<Uuid>) -> Element {
                                 class: "select",
                                 value: selected_method,
                                 onchange: move |e| selected_method.set(e.value()),
-                                option { value: "", disabled: true, selected: selected_method().is_empty(), "Choose a method" }
+                                option {
+                                    value: "",
+                                    disabled: true,
+                                    selected: selected_method().is_empty(),
+                                    "Choose a method"
+                                }
                                 if source_id.is_none() {
                                     option { value: "manual", "Manual" }
                                 }
                                 for provider in provider_options.iter() {
-                                    option {
-                                        value: "{provider}",
-                                        {
-                                            if provider == "gocardless" {
-                                                "GoCardless BankAccountData"
-                                            } else {
-                                                "Enable Banking"
-                                            }
-                                        }
+                                    option { value: "{provider}",
+                                        {if provider == "gocardless" { "GoCardless" } else { "Enable Banking" }}
                                     }
                                 }
                             }
@@ -625,10 +645,7 @@ pub fn BankConnect(source_id: Option<Uuid>) -> Element {
                         onsubmit: handle_manual_submit,
                     }
                 } else if !selected_method().is_empty() {
-                    BankConnectAspsp {
-                        provider_id: selected_method(),
-                        source_id,
-                    }
+                    BankConnectAspsp { provider_id: selected_method(), source_id }
                 }
             }
         }
@@ -664,7 +681,9 @@ fn BankConnectAspsp(provider_id: String, source_id: Option<Uuid>) -> Element {
     let aspsps = match aspsps_resource() {
         Some(Ok(list)) => list,
         Some(Err(err)) => {
-            return rsx! { div { class: "message message-error", "Failed to load banks: {err}" } };
+            return rsx! {
+                div { class: "message message-error", "Failed to load banks: {err}" }
+            };
         }
         None => vec![],
     };
@@ -715,7 +734,9 @@ fn BankConnectAspsp(provider_id: String, source_id: Option<Uuid>) -> Element {
             }
 
             if provider_id == "gocardless" && country_filter().trim().is_empty() {
-                div { class: "message message-info", "Choose a country to load GoCardless institutions." }
+                div { class: "message message-info",
+                    "Choose a country to load GoCardless institutions."
+                }
             } else if aspsps_resource().is_none() {
                 div { class: "message message-info", "Loading banks..." }
             } else if filtered.is_empty() {
@@ -762,33 +783,33 @@ fn BankConnectAspsp(provider_id: String, source_id: Option<Uuid>) -> Element {
                                                 let institution_name = institution_name.clone();
                                                 let institution_country = institution_country.clone();
                                                 async move {
-                                                select_error.set(None);
-                                                selecting.set(true);
+                                                    select_error.set(None);
+                                                    selecting.set(true);
 
-                                                match start_bank_auth(
-                                                    provider_id.clone(),
-                                                    institution_id,
-                                                    institution_name,
-                                                    institution_country,
-                                                    source_id,
-                                                )
-                                                .await
-                                                {
-                                                    Ok(redirect_url) => {
-                                                        #[cfg(feature = "web")]
-                                                        {
-                                                            use web_sys::window;
-                                                            if let Some(win) = window() {
-                                                                let _ = win.location().set_href(&redirect_url);
+                                                    match start_bank_auth(
+                                                            provider_id.clone(),
+                                                            institution_id,
+                                                            institution_name,
+                                                            institution_country,
+                                                            source_id,
+                                                        )
+                                                        .await
+                                                    {
+                                                        Ok(redirect_url) => {
+                                                            #[cfg(feature = "web")]
+                                                            {
+                                                                use web_sys::window;
+                                                                if let Some(win) = window() {
+                                                                    let _ = win.location().set_href(&redirect_url);
+                                                                }
                                                             }
+                                                            let _ = redirect_url;
                                                         }
-                                                        let _ = redirect_url;
+                                                        Err(e) => {
+                                                            select_error.set(Some(e.to_string()));
+                                                            selecting.set(false);
+                                                        }
                                                     }
-                                                    Err(e) => {
-                                                        select_error.set(Some(e.to_string()));
-                                                        selecting.set(false);
-                                                    }
-                                                }
                                                 }
                                             }
                                         },
@@ -808,15 +829,21 @@ fn BankConnectAspsp(provider_id: String, source_id: Option<Uuid>) -> Element {
 pub fn BankAccountMap(connection_id: Uuid) -> Element {
     let nav = use_navigator();
     let internal_accounts_resource = use_loader(crate::views::transactions::list_accounts_for_txn)?;
-    let provider_accounts_resource = use_server_future(move || get_provider_accounts_for_connection(connection_id))?;
-    let source_account_resource = use_server_future(move || get_connection_source_bank_account_id(connection_id))?;
+    let provider_accounts_resource =
+        use_server_future(move || get_provider_accounts_for_connection(connection_id))?;
+    let source_account_resource =
+        use_server_future(move || get_connection_source_bank_account_id(connection_id))?;
     let mut mapping_error = use_signal(|| None::<String>);
     let mut mapping_done = use_signal(|| false);
 
     let provider_accounts = match provider_accounts_resource() {
         Some(Ok(list)) => list,
         Some(Err(err)) => {
-            return rsx! { div { class: "app-container", div { class: "message message-error", "Failed to load provider accounts: {err}" } } };
+            return rsx! {
+                div { class: "app-container",
+                    div { class: "message message-error", "Failed to load provider accounts: {err}" }
+                }
+            };
         }
         None => vec![],
     };
@@ -824,26 +851,31 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
     let source_bank_account_id = match source_account_resource() {
         Some(Ok(value)) => value,
         Some(Err(err)) => {
-            return rsx! { div { class: "app-container", div { class: "message message-error", "Failed to load connection context: {err}" } } };
+            return rsx! {
+                div { class: "app-container",
+                    div { class: "message message-error", "Failed to load connection context: {err}" }
+                }
+            };
         }
         None => None,
     };
 
     let internal_accounts = internal_accounts_resource.read().clone();
-    let mut selections: Signal<Vec<(String, Option<String>, Option<String>, String, String)>> = use_signal(|| {
-        provider_accounts
-            .iter()
-            .map(|a| {
-                (
-                    a.uid.clone(),
-                    a.name.clone(),
-                    a.iban.clone(),
-                    a.currency.clone(),
-                    String::new(),
-                )
-            })
-            .collect()
-    });
+    let mut selections: Signal<Vec<(String, Option<String>, Option<String>, String, String)>> =
+        use_signal(|| {
+            provider_accounts
+                .iter()
+                .map(|a| {
+                    (
+                        a.uid.clone(),
+                        a.name.clone(),
+                        a.iban.clone(),
+                        a.currency.clone(),
+                        String::new(),
+                    )
+                })
+                .collect()
+        });
 
     let handle_save = move |_| async move {
         mapping_error.set(None);
@@ -930,19 +962,25 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
                 }
 
                 if provider_accounts.is_empty() {
-                    div { class: "message message-info", "No accounts were returned by the bank. Please try reconnecting." }
+                    div { class: "message message-info",
+                        "No accounts were returned by the bank. Please try reconnecting."
+                    }
                 } else {
                     section { class: "editor-shell",
                         div { class: "stack-lg",
-                            for (i, account) in provider_accounts.iter().enumerate() {
+                            for (i , account) in provider_accounts.iter().enumerate() {
                                 div { class: "glass-card",
                                     div { class: "form-grid two-up",
                                         div { class: "field-block",
                                             label { class: "field-label", "Bank account" }
                                             div { class: "stack-sm",
-                                                span { class: "label-strong", {account.name.as_deref().unwrap_or("Unnamed")} }
+                                                span { class: "label-strong",
+                                                    {account.name.as_deref().unwrap_or("Unnamed")}
+                                                }
                                                 if let Some(iban) = account.iban.as_deref() {
-                                                    span { class: "tiny-text mono muted", "{iban}" }
+                                                    span { class: "tiny-text mono muted",
+                                                        "{iban}"
+                                                    }
                                                 }
                                                 span { class: "tiny-text muted", "{account.currency}" }
                                             }
@@ -955,7 +993,12 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
                                                     onchange: move |e| {
                                                         selections.write()[i].4 = e.value();
                                                     },
-                                                    option { value: "", disabled: true, selected: selections()[i].4.is_empty(), "Select a ledger account" }
+                                                    option {
+                                                        value: "",
+                                                        disabled: true,
+                                                        selected: selections()[i].4.is_empty(),
+                                                        "Select a ledger account"
+                                                    }
                                                     for acc in internal_accounts.iter() {
                                                         option {
                                                             value: "{acc.id}",
@@ -976,13 +1019,21 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
                             }
 
                             div { class: "actions-row justify-end",
-                                Link { class: "btn btn-secondary", to: crate::Route::BankAccounts {}, "Cancel" }
+                                Link {
+                                    class: "btn btn-secondary",
+                                    to: crate::Route::BankAccounts {},
+                                    "Cancel"
+                                }
                                 button {
                                     class: "btn btn-primary",
                                     r#type: "button",
                                     disabled: mapping_done(),
                                     onclick: handle_save,
-                                    if source_bank_account_id.is_some() { "Link account" } else { "Save mapping" }
+                                    if source_bank_account_id.is_some() {
+                                        "Link account"
+                                    } else {
+                                        "Save mapping"
+                                    }
                                 }
                             }
                         }
@@ -999,7 +1050,10 @@ async fn get_provider_accounts_for_connection(
 ) -> Result<Vec<ProviderBankAccountInfo>, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::{bank_sync::provider::ProviderBankAccount, server::auth::{extract_context, require_auth}};
+        use crate::{
+            bank_sync::provider::ProviderBankAccount,
+            server::auth::{extract_context, require_auth},
+        };
 
         let (pool, cookies) = extract_context().await?;
         let user_id = require_auth(&pool, &cookies).await?;

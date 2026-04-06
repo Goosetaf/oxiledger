@@ -72,7 +72,9 @@ impl AnyBankSyncProvider {
             AnyBankSyncProvider::EnableBanking(provider) => {
                 provider.complete_authorization(code).await
             }
-            AnyBankSyncProvider::GoCardless(provider) => provider.complete_authorization(code).await,
+            AnyBankSyncProvider::GoCardless(provider) => {
+                provider.complete_authorization(code).await
+            }
         }
     }
 
@@ -99,29 +101,37 @@ impl AnyBankSyncProvider {
     ) -> Result<Vec<provider::ProviderTransaction>, error::BankSyncError> {
         match self {
             AnyBankSyncProvider::EnableBanking(provider) => {
-                provider.fetch_transactions(session_id, account_uid, since).await
+                provider
+                    .fetch_transactions(session_id, account_uid, since)
+                    .await
             }
             AnyBankSyncProvider::GoCardless(provider) => {
-                provider.fetch_transactions(session_id, account_uid, since).await
+                provider
+                    .fetch_transactions(session_id, account_uid, since)
+                    .await
             }
         }
     }
 
     pub async fn revoke_session(&self, session_id: &str) -> Result<(), error::BankSyncError> {
         match self {
-            AnyBankSyncProvider::EnableBanking(provider) => provider.revoke_session(session_id).await,
+            AnyBankSyncProvider::EnableBanking(provider) => {
+                provider.revoke_session(session_id).await
+            }
             AnyBankSyncProvider::GoCardless(provider) => provider.revoke_session(session_id).await,
         }
     }
 }
 
 #[cfg(feature = "server")]
-pub async fn get_provider(
-    provider_id: &str,
-) -> Result<AnyBankSyncProvider, error::BankSyncError> {
+pub async fn get_provider(provider_id: &str) -> Result<AnyBankSyncProvider, error::BankSyncError> {
     match provider_id {
-        "enable_banking" => Ok(AnyBankSyncProvider::EnableBanking(EnableBankingProvider::from_env()?)),
-        "gocardless" => Ok(AnyBankSyncProvider::GoCardless(GoCardlessProvider::from_env().await?)),
+        "enable_banking" => Ok(AnyBankSyncProvider::EnableBanking(
+            EnableBankingProvider::from_env()?,
+        )),
+        "gocardless" => Ok(AnyBankSyncProvider::GoCardless(
+            GoCardlessProvider::from_env().await?,
+        )),
         other => Err(error::BankSyncError::Provider(format!(
             "Unknown bank sync provider: {other}"
         ))),
