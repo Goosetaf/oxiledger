@@ -5,6 +5,7 @@ pub mod account_form;
 pub mod account_new;
 pub mod accounts;
 pub mod bank_account_detail;
+pub mod bank_account_edit;
 pub mod bank_account_new;
 pub mod bank_accounts;
 pub mod bank_connect;

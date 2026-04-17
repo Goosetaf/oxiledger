@@ -15,6 +15,7 @@ use views::{
     account_new::NewAccount,
     accounts::Accounts,
     bank_account_detail::BankAccountDetail,
+    bank_account_edit::BankAccountEdit,
     bank_account_new::NewBankAccount,
     bank_accounts::BankAccounts,
     bank_connect::{BankAccountMap, BankConnect},
@@ -74,6 +75,8 @@ enum Route {
             NewBankAccount {},
             #[route("/bank-accounts/:id")]
             BankAccountDetail { id: Uuid },
+            #[route("/bank-accounts/:id/edit")]
+            BankAccountEdit { id: Uuid },
             #[route("/bank-accounts/connect?:source_id")]
             BankConnect { source_id: Option<Uuid> },
             #[route("/bank-accounts/connect/map?:connection_id")]
