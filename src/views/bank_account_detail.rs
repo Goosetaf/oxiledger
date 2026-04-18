@@ -6,6 +6,8 @@ use crate::{
 };
 use dioxus::prelude::*;
 use rust_decimal::Decimal;
+#[cfg(feature = "server")]
+use sqlx::Row;
 use uuid::Uuid;
 
 #[get("/api/bank-accounts/:id")]
@@ -76,22 +78,24 @@ pub async fn get_bank_account_balance(
         let (pool, cookies) = extract_context().await?;
         let user_id = require_auth(&pool, &cookies).await?;
 
+        crate::server::bank_sync_cache::maybe_lazy_sync_for_user(&pool, user_id, id)
+            .await
+            .map_err(ServerFnError::new)?;
+
         // Load account and connection.
-        let record = sqlx::query!(
+        let record = sqlx::query(
             r#"
             SELECT
                 ba.internal_account_id,
-                ba.provider_account_uid,
                 ba.is_manual,
-                bc.provider_id AS "provider_id?: String",
-                bc.provider_session_id AS "provider_session_id?: String"
+                ba.balance,
+                ba.currency
             FROM bank_accounts ba
-            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
             WHERE ba.id = $1 AND ba.user_id = $2
             "#,
-            id,
-            user_id
         )
+        .bind(id)
+        .bind(user_id)
         .fetch_optional(&pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?
@@ -99,6 +103,9 @@ pub async fn get_bank_account_balance(
 
         // Compute internal balance: debit_sum - credit_sum of all journal entries
         // for the linked internal account.
+        let internal_account_id: Uuid = record.get("internal_account_id");
+        let is_manual: bool = record.get("is_manual");
+
         let bal_row = sqlx::query!(
             r#"
             SELECT
@@ -110,7 +117,7 @@ pub async fn get_bank_account_balance(
             JOIN transactions t ON t.id = je.transaction_id
             WHERE je.account_id = $1 AND t.user_id = $2
             "#,
-            record.internal_account_id,
+            internal_account_id,
             user_id
         )
         .fetch_one(&pool)
@@ -120,7 +127,7 @@ pub async fn get_bank_account_balance(
         let internal_balance = bal_row.debit_sum - bal_row.credit_sum;
 
         // Manual accounts have no live balance from a provider.
-        if record.is_manual {
+        if is_manual {
             return Ok(BankAccountBalanceComparison {
                 bank_account_id: id,
                 internal_balance,
@@ -130,35 +137,9 @@ pub async fn get_bank_account_balance(
             });
         }
 
-        // Fetch live balance from the provider.
-        let provider_id = record
-            .provider_id
-            .ok_or_else(|| ServerFnError::new("No provider connection"))?;
-        let provider_session_id = record
-            .provider_session_id
-            .ok_or_else(|| ServerFnError::new("No provider session"))?;
-        let provider_account_uid = record
-            .provider_account_uid
-            .ok_or_else(|| ServerFnError::new("No provider account UID"))?;
-
-        let provider = crate::bank_sync::get_provider(&provider_id).await?;
-
-        let balances = provider
-            .get_balances(&provider_session_id, &provider_account_uid)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        // Prefer closing booked (CLBD), then closing available (CLAV).
-        let bank_balance = balances
-            .iter()
-            .find(|b| b.balance_type == "CLBD")
-            .or_else(|| balances.iter().find(|b| b.balance_type == "CLAV"))
-            .or_else(|| balances.first());
-
-        let (bank_balance_amount, bank_balance_currency) = match bank_balance {
-            Some(b) => (Some(b.amount), Some(b.currency.clone())),
-            None => (None, None),
-        };
+        let bank_balance_amount: Option<Decimal> = record.get("balance");
+        let bank_balance_currency =
+            bank_balance_amount.map(|_| record.get::<String, _>("currency"));
 
         let difference = bank_balance_amount.map(|b| b - internal_balance);
 
@@ -183,6 +164,10 @@ pub async fn list_bank_transactions(id: Uuid) -> Result<Vec<BankTransaction>, Se
 
         let (pool, cookies) = extract_context().await?;
         let user_id = require_auth(&pool, &cookies).await?;
+
+        crate::server::bank_sync_cache::maybe_lazy_sync_for_user(&pool, user_id, id)
+            .await
+            .map_err(ServerFnError::new)?;
 
         let rows = sqlx::query_as!(
             BankTransaction,
@@ -239,9 +224,12 @@ pub async fn dismiss_bank_transaction(id: Uuid) -> Result<(), ServerFnError> {
 }
 
 #[post("/api/bank-accounts/:id/sync")]
-pub async fn sync_bank_account_detail(id: Uuid) -> Result<SyncResult, ServerFnError> {
+pub async fn sync_bank_account_detail(
+    id: Uuid,
+    force: Option<bool>,
+) -> Result<SyncResult, ServerFnError> {
     // Delegate to the same logic used by the list page.
-    crate::views::bank_accounts::sync_bank_account(id).await
+    crate::views::bank_accounts::sync_bank_account(id, force).await
 }
 
 #[post("/api/bank-accounts/:id/disconnect")]
@@ -270,16 +258,17 @@ pub async fn disconnect_bank_account(id: Uuid) -> Result<(), ServerFnError> {
             return Err(ServerFnError::new("This bank account is already manual"));
         }
 
-        sqlx::query!(
+        sqlx::query(
             r#"UPDATE bank_accounts
             SET bank_connection_id = NULL,
                 provider_account_uid = NULL,
                 is_manual = TRUE,
-                last_synced_at = NULL
+                last_synced_at = NULL,
+                balance = NULL
             WHERE id = $1 AND user_id = $2"#,
-            id,
-            user_id
         )
+        .bind(id)
+        .bind(user_id)
         .execute(&pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -320,7 +309,7 @@ pub async fn disconnect_bank_account(id: Uuid) -> Result<(), ServerFnError> {
 pub fn BankAccountDetail(id: Uuid) -> Element {
     let nav = use_navigator();
     let account_resource = use_server_future(move || get_bank_account_detail(id))?;
-    let balance_resource = use_resource(move || get_bank_account_balance(id));
+    let mut balance_resource = use_resource(move || get_bank_account_balance(id));
     let mut txns_resource = use_loader(move || list_bank_transactions(id))?;
 
     let mut action_error = use_signal(|| None::<String>);
@@ -357,13 +346,14 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
         action_error.set(None);
         action_success.set(None);
         syncing.set(true);
-        match sync_bank_account_detail(id).await {
+        match sync_bank_account_detail(id, Some(true)).await {
             Ok(result) => {
                 action_success.set(Some(format!(
                     "Sync complete: {} new transaction(s), {} already imported.",
                     result.new_count, result.skipped_count
                 )));
                 txns_resource.restart();
+                balance_resource.restart();
             }
             Err(err) => action_error.set(Some(err.to_string())),
         }
@@ -506,7 +496,7 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                 if let Some(bank_bal) = cmp.bank_balance {
                                     p { class: "metric-value mono", "{bank_bal}" }
                                     if let Some(currency) = cmp.bank_balance_currency.as_deref() {
-                                        p { class: "tiny-text muted", "{currency} · from bank API" }
+                                        p { class: "tiny-text muted", "{currency} · from last sync" }
                                     }
                                 } else {
                                     p { class: "metric-value muted", "Unavailable" }

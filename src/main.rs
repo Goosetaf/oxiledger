@@ -132,6 +132,7 @@ fn server_main() {
     dioxus::serve(|| async move {
         let pool = server::db::connect().await;
         server::db::run_migrations(&pool).await;
+        server::bank_sync_cache::start_background_scheduler(pool.clone()).await;
 
         let oidc_config = Arc::new(server::oidc::load_config().await);
 

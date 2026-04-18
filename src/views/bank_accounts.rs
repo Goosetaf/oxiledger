@@ -67,7 +67,7 @@ pub async fn list_bank_accounts() -> Result<Vec<BankAccountSummary>, ServerFnErr
 }
 
 #[post("/api/bank-accounts/:id/sync")]
-pub async fn sync_bank_account(id: Uuid) -> Result<SyncResult, ServerFnError> {
+pub async fn sync_bank_account(id: Uuid, force: Option<bool>) -> Result<SyncResult, ServerFnError> {
     #[cfg(feature = "server")]
     {
         use crate::server::auth::{extract_context, require_auth};
@@ -75,97 +75,14 @@ pub async fn sync_bank_account(id: Uuid) -> Result<SyncResult, ServerFnError> {
         let (pool, cookies) = extract_context().await?;
         let user_id = require_auth(&pool, &cookies).await?;
 
-        // Load the bank account and its connection details.
-        let record = sqlx::query!(
-            r#"
-            SELECT
-                ba.provider_account_uid,
-                ba.last_synced_at,
-                ba.is_manual,
-                bc.provider_id AS "provider_id?: String",
-                bc.provider_session_id AS "provider_session_id?: String"
-            FROM bank_accounts ba
-            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
-            WHERE ba.id = $1 AND ba.user_id = $2
-            "#,
+        return crate::server::bank_sync_cache::sync_bank_account_for_user(
+            &pool,
+            user_id,
             id,
-            user_id
+            force.unwrap_or(false),
         )
-        .fetch_optional(&pool)
         .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
-
-        if record.is_manual {
-            return Err(ServerFnError::new(
-                "Manual accounts do not support automatic sync.",
-            ));
-        }
-
-        let provider_id = record
-            .provider_id
-            .ok_or_else(|| ServerFnError::new("Bank account has no provider connection"))?;
-        let provider_session_id = record
-            .provider_session_id
-            .ok_or_else(|| ServerFnError::new("Bank account has no provider session"))?;
-        let provider_account_uid = record
-            .provider_account_uid
-            .ok_or_else(|| ServerFnError::new("Bank account has no provider account UID"))?;
-
-        let provider = crate::bank_sync::get_provider(&provider_id).await?;
-
-        let since = record.last_synced_at.map(|dt| dt.date_naive());
-
-        let transactions = provider
-            .fetch_transactions(&provider_session_id, &provider_account_uid, since)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        let mut new_count = 0u32;
-        let mut skipped_count = 0u32;
-
-        for txn in &transactions {
-            let result = sqlx::query!(
-                r#"
-                INSERT INTO bank_transactions
-                    (bank_account_id, user_id, external_id, date, amount, currency,
-                     description, reference)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                ON CONFLICT (bank_account_id, external_id) DO NOTHING
-                "#,
-                id,
-                user_id,
-                txn.external_id,
-                txn.date,
-                txn.amount,
-                txn.currency,
-                txn.description,
-                txn.reference
-            )
-            .execute(&pool)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-            if result.rows_affected() > 0 {
-                new_count += 1;
-            } else {
-                skipped_count += 1;
-            }
-        }
-
-        // Update last_synced_at.
-        sqlx::query!(
-            "UPDATE bank_accounts SET last_synced_at = NOW() WHERE id = $1",
-            id
-        )
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(SyncResult {
-            new_count,
-            skipped_count,
-        });
+        .map_err(ServerFnError::new);
     }
 
     #[allow(unreachable_code)]
@@ -215,7 +132,7 @@ pub fn BankAccounts() -> Element {
         action_success.set(None);
         syncing.set(Some(id));
 
-        match sync_bank_account(id).await {
+        match sync_bank_account(id, Some(true)).await {
             Ok(result) => {
                 action_success.set(Some(format!(
                     "Sync complete: {} new transaction(s), {} already imported.",

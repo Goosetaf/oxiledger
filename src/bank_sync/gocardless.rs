@@ -1,6 +1,7 @@
 use std::{
+    collections::HashMap,
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::{LazyLock, Mutex},
     time::{Duration, Instant},
 };
 
@@ -22,9 +23,9 @@ const PRODUCTION_BASE_URL: &str = "https://bankaccountdata.gocardless.com/api/v2
 #[derive(Clone)]
 pub struct GoCardlessProvider {
     base_url: String,
-    refresh_token: String,
+    secret_id: String,
+    secret_key: String,
     http: Client,
-    access_token: Arc<Mutex<Option<CachedAccessToken>>>,
 }
 
 #[derive(Clone)]
@@ -32,6 +33,15 @@ struct CachedAccessToken {
     value: String,
     expires_at: Instant,
 }
+
+#[derive(Clone, Default)]
+struct CachedAuthState {
+    refresh_token: Option<String>,
+    access_token: Option<CachedAccessToken>,
+}
+
+static AUTH_CACHE: LazyLock<Mutex<HashMap<String, CachedAuthState>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 impl GoCardlessProvider {
     pub async fn from_env() -> Result<Self, BankSyncError> {
@@ -52,14 +62,11 @@ impl GoCardlessProvider {
             .build()
             .map_err(|e| BankSyncError::Http(e.to_string()))?;
 
-        let refresh_token =
-            Self::new_refresh_token(&http, &base_url, &secret_id, &secret_key).await?;
-
         Ok(Self {
             base_url,
-            refresh_token,
+            secret_id,
+            secret_key,
             http,
-            access_token: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -94,45 +101,111 @@ impl GoCardlessProvider {
     }
 
     async fn access_token(&self) -> Result<String, BankSyncError> {
+        let cache_key = self.cache_key();
+
         {
-            let cache = self.access_token.lock().map_err(|_| {
+            let cache = AUTH_CACHE.lock().map_err(|_| {
                 BankSyncError::Provider("GoCardless token cache lock poisoned".into())
             })?;
-            if let Some(cached) = cache.as_ref() {
+            if let Some(cached) = cache
+                .get(&cache_key)
+                .and_then(|entry| entry.access_token.as_ref())
+            {
                 if Instant::now() < cached.expires_at {
                     return Ok(cached.value.clone());
                 }
             }
         }
 
+        let refresh_token = match self.cached_refresh_token(&cache_key)? {
+            Some(refresh_token) => refresh_token,
+            None => {
+                let refresh_token = self.new_refresh_token_from_env().await?;
+                self.store_refresh_token(&cache_key, refresh_token.clone())?;
+                refresh_token
+            }
+        };
+
+        let refresh_result = self.refresh_access_token(&refresh_token).await;
+        let data = match refresh_result {
+            Ok(data) => data,
+            Err(BankSyncError::Auth(_)) | Err(BankSyncError::NotFound(_)) => {
+                let refresh_token = self.new_refresh_token_from_env().await?;
+                self.store_refresh_token(&cache_key, refresh_token.clone())?;
+                self.refresh_access_token(&refresh_token).await?
+            }
+            Err(err) => return Err(err),
+        };
+
+        let mut cache = AUTH_CACHE
+            .lock()
+            .map_err(|_| BankSyncError::Provider("GoCardless token cache lock poisoned".into()))?;
+        let ttl = data.access_expires.saturating_sub(60);
+        let token = data.access.clone();
+        let entry = cache.entry(cache_key).or_default();
+        entry.access_token = Some(CachedAccessToken {
+            value: data.access,
+            expires_at: Instant::now() + Duration::from_secs(ttl.max(60)),
+        });
+
+        Ok(token)
+    }
+
+    fn cache_key(&self) -> String {
+        format!("{}:{}", self.base_url, self.secret_id)
+    }
+
+    fn cached_refresh_token(&self, cache_key: &str) -> Result<Option<String>, BankSyncError> {
+        let cache = AUTH_CACHE
+            .lock()
+            .map_err(|_| BankSyncError::Provider("GoCardless token cache lock poisoned".into()))?;
+        Ok(cache
+            .get(cache_key)
+            .and_then(|entry| entry.refresh_token.clone()))
+    }
+
+    fn store_refresh_token(
+        &self,
+        cache_key: &str,
+        refresh_token: String,
+    ) -> Result<(), BankSyncError> {
+        let mut cache = AUTH_CACHE
+            .lock()
+            .map_err(|_| BankSyncError::Provider("GoCardless token cache lock poisoned".into()))?;
+        let entry = cache.entry(cache_key.to_string()).or_default();
+        entry.refresh_token = Some(refresh_token);
+        entry.access_token = None;
+        Ok(())
+    }
+
+    async fn new_refresh_token_from_env(&self) -> Result<String, BankSyncError> {
+        Self::new_refresh_token(
+            &self.http,
+            &self.base_url,
+            &self.secret_id,
+            &self.secret_key,
+        )
+        .await
+    }
+
+    async fn refresh_access_token(
+        &self,
+        refresh_token: &str,
+    ) -> Result<TokenRefreshResponse, BankSyncError> {
         let resp = self
             .http
             .post(format!("{}/token/refresh/", self.base_url))
             .json(&TokenRefreshRequest {
-                refresh: &self.refresh_token,
+                refresh: refresh_token,
             })
             .send()
             .await
             .map_err(|e| BankSyncError::Http(e.to_string()))?;
 
         let resp = Self::check_response(resp).await?;
-        let data: TokenRefreshResponse = resp
-            .json()
+        resp.json()
             .await
-            .map_err(|e| BankSyncError::Parse(e.to_string()))?;
-
-        let mut cache = self
-            .access_token
-            .lock()
-            .map_err(|_| BankSyncError::Provider("GoCardless token cache lock poisoned".into()))?;
-        let ttl = data.access_expires.saturating_sub(60);
-        let token = data.access.clone();
-        *cache = Some(CachedAccessToken {
-            value: data.access,
-            expires_at: Instant::now() + Duration::from_secs(ttl.max(60)),
-        });
-
-        Ok(token)
+            .map_err(|e| BankSyncError::Parse(e.to_string()))
     }
 
     async fn authorized_get<T: for<'de> Deserialize<'de>>(

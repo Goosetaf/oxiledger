@@ -39,11 +39,11 @@ pub async fn list_aspsps(
         let (pool, cookies) = extract_context().await?;
         require_auth(&pool, &cookies).await?;
 
-        let provider = crate::bank_sync::get_provider(&provider_id).await?;
-        return provider
-            .list_aspsps(country.as_deref())
-            .await
-            .map_err(Into::into);
+        return crate::server::bank_sync_cache::list_aspsps_cached(
+            &provider_id,
+            country.as_deref(),
+        )
+        .await;
     }
 
     #[allow(unreachable_code)]
@@ -368,15 +368,14 @@ pub async fn list_connection_accounts(
         let (pool, cookies) = extract_context().await?;
         let user_id = require_auth(&pool, &cookies).await?;
 
-        let rows = sqlx::query_as!(
-            crate::models::bank_sync::BankAccountRecord,
+        let rows = sqlx::query_as::<_, crate::models::bank_sync::BankAccountRecord>(
             r#"SELECT id, user_id, bank_connection_id, internal_account_id,
-                provider_account_uid, iban, name, currency, last_synced_at, created_at
+                provider_account_uid, iban, name, currency, balance, last_synced_at, created_at
             FROM bank_accounts
             WHERE bank_connection_id = $1 AND user_id = $2"#,
-            connection_id,
-            user_id
         )
+        .bind(connection_id)
+        .bind(user_id)
         .fetch_all(&pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -418,7 +417,7 @@ pub async fn map_bank_account(
             return Err(ServerFnError::new("Connection not found"));
         }
 
-        let bank_account_id = sqlx::query_scalar!(
+        let bank_account_id: Uuid = sqlx::query_scalar(
             r#"INSERT INTO bank_accounts
                 (user_id, bank_connection_id, internal_account_id,
                  provider_account_uid, iban, name, currency, is_manual)
@@ -430,16 +429,18 @@ pub async fn map_bank_account(
                     iban = EXCLUDED.iban,
                     name = EXCLUDED.name,
                     currency = EXCLUDED.currency,
-                    is_manual = FALSE
+                    is_manual = FALSE,
+                    last_synced_at = NULL,
+                    balance = NULL
             RETURNING id"#,
-            user_id,
-            connection_id,
-            internal_account_id,
-            provider_account_uid,
-            provider_account_iban,
-            provider_account_name,
-            provider_account_currency
         )
+        .bind(user_id)
+        .bind(connection_id)
+        .bind(internal_account_id)
+        .bind(provider_account_uid)
+        .bind(provider_account_iban)
+        .bind(provider_account_name)
+        .bind(provider_account_currency)
         .fetch_one(&pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -496,23 +497,25 @@ pub async fn link_existing_bank_account(
             ));
         }
 
-        sqlx::query!(
+        sqlx::query(
             r#"UPDATE bank_accounts
             SET bank_connection_id = $2,
                 provider_account_uid = $3,
                 iban = COALESCE($4, iban),
                 name = COALESCE($5, name),
                 currency = $6,
-                is_manual = FALSE
+                is_manual = FALSE,
+                last_synced_at = NULL,
+                balance = NULL
             WHERE id = $1 AND user_id = $7"#,
-            bank_account_id,
-            connection_id,
-            provider_account_uid,
-            provider_account_iban,
-            provider_account_name,
-            provider_account_currency,
-            user_id
         )
+        .bind(bank_account_id)
+        .bind(connection_id)
+        .bind(provider_account_uid)
+        .bind(provider_account_iban)
+        .bind(provider_account_name)
+        .bind(provider_account_currency)
+        .bind(user_id)
         .execute(&pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;

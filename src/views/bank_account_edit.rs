@@ -13,7 +13,7 @@ async fn get_bank_account_for_edit(id: Uuid) -> Result<BankAccountRecord, Server
 
         let account = sqlx::query_as::<_, BankAccountRecord>(
             r#"SELECT id, user_id, bank_connection_id, internal_account_id,
-                   provider_account_uid, iban, name, currency, last_synced_at, created_at
+                   provider_account_uid, iban, name, currency, balance, last_synced_at, created_at
                FROM bank_accounts
                WHERE id = $1 AND user_id = $2"#,
         )
