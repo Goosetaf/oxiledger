@@ -378,6 +378,8 @@ async fn sync_bank_account_record(
     let mut new_count = 0u32;
     let mut skipped_count = 0u32;
 
+    let mut tx = pool.begin().await.map_err(|err| err.to_string())?;
+
     for txn in &transactions {
         let result = sqlx::query(
             r#"
@@ -396,7 +398,7 @@ async fn sync_bank_account_record(
         .bind(&txn.currency)
         .bind(&txn.description)
         .bind(&txn.reference)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -417,9 +419,11 @@ async fn sync_bank_account_record(
     )
     .bind(record.id)
     .bind(balance)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|err| err.to_string())?;
+
+    tx.commit().await.map_err(|err| err.to_string())?;
 
     Ok(SyncResult {
         new_count,
