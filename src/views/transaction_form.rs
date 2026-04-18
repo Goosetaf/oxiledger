@@ -253,120 +253,119 @@ pub fn TransactionForm(
                                 "+ Add line"
                             }
 
-                            div { class: "entry-list",
+                            table { class: "data-table",
+                                thead {
+                                    tr {
+                                        th { "Account" }
+                                        th { "Memo" }
+                                        th { "Debit" }
+                                        th { "Credit" }
+                                        th { class: "col-actions", "Actions" }
+                                    }
+                                }
                                 for (index , row) in entry_rows().iter().cloned().enumerate() {
-                                    div { class: if row.is_locked() { "entry-row entry-row-locked" } else { "entry-row" },
-                                        div { class: "entry-grid",
-                                            div { class: "field-block",
-                                                label { class: "field-label",
-                                                    "Account"
-                                                    if row.is_locked() {
-                                                        span { class: "badge badge-info",
-                                                            "Bank"
-                                                        }
+                                    tr { class: if row.is_locked() { "entry-row-locked" } else { "" },
+                                        td {
+                                            select {
+                                                class: "select",
+                                                r#autocomplete: "off",
+                                                disabled: row.is_locked(),
+                                                onchange: move |e| {
+                                                    if !entry_rows.read()[index].is_locked() {
+                                                        entry_rows.write()[index].account_id_str = e.value();
                                                     }
+                                                },
+                                                option {
+                                                    value: "",
+                                                    disabled: true,
+                                                    selected: row.account_id_str.is_empty(),
+                                                    "Select an account"
                                                 }
-                                                select {
-                                                    class: "select",
-                                                    r#autocomplete: "off",
-                                                    disabled: row.is_locked(),
-                                                    onchange: move |e| {
-                                                        if !entry_rows.read()[index].is_locked() {
-                                                            entry_rows.write()[index].account_id_str = e.value();
-                                                        }
-                                                    },
+                                                for account in accounts.iter() {
                                                     option {
-                                                        value: "",
-                                                        disabled: true,
-                                                        selected: row.account_id_str.is_empty(),
-                                                        "Select an account"
-                                                    }
-                                                    for account in accounts.iter() {
-                                                        option {
-                                                            value: "{account.id}",
-                                                            selected: row.account_id_str == account.id.to_string(),
-                                                            "{account_option_label(account)}"
-                                                        }
+                                                        value: "{account.id}",
+                                                        selected: row.account_id_str == account.id.to_string(),
+                                                        "{account_option_label(account)}"
                                                     }
                                                 }
                                             }
+                                        }
 
-                                            div { class: "field-block",
-                                                label { class: "field-label", "Memo" }
-                                                input {
-                                                    class: "input",
-                                                    r#type: "text",
-                                                    r#autocomplete: "off",
-                                                    placeholder: "Optional note",
-                                                    value: row.memo.clone(),
-                                                    readonly: row.is_locked(),
-                                                    oninput: move |e| {
-                                                        if !entry_rows.read()[index].is_locked() {
-                                                            entry_rows.write()[index].memo = e.value();
-                                                        }
-                                                    },
-                                                }
-                                            }
-
-                                            div { class: "field-block",
-                                                label { class: "field-label", "Debit" }
-                                                input {
-                                                    class: "input",
-                                                    r#type: "text",
-                                                    r#autocomplete: "off",
-                                                    inputmode: "decimal",
-                                                    placeholder: "0.00",
-                                                    value: row.debit_amount_str.clone(),
-                                                    readonly: row.is_locked(),
-                                                    oninput: move |e| {
-                                                        if entry_rows.read()[index].is_locked() {
-                                                            return;
-                                                        }
-                                                        let value = e.value();
-                                                        let mut rows = entry_rows.write();
-                                                        rows[index].debit_amount_str = value;
-                                                        if !rows[index].debit_amount_str.trim().is_empty() {
-                                                            rows[index].credit_amount_str.clear();
-                                                        }
-                                                    },
-                                                }
-                                            }
-
-                                            div { class: "field-block",
-                                                label { class: "field-label", "Credit" }
-                                                input {
-                                                    class: "input",
-                                                    r#type: "text",
-                                                    r#autocomplete: "off",
-                                                    inputmode: "decimal",
-                                                    placeholder: "0.00",
-                                                    value: row.credit_amount_str.clone(),
-                                                    readonly: row.is_locked(),
-                                                    oninput: move |e| {
-                                                        if entry_rows.read()[index].is_locked() {
-                                                            return;
-                                                        }
-                                                        let value = e.value();
-                                                        let mut rows = entry_rows.write();
-                                                        rows[index].credit_amount_str = value;
-                                                        if !rows[index].credit_amount_str.trim().is_empty() {
-                                                            rows[index].debit_amount_str.clear();
-                                                        }
-                                                    },
-                                                }
-                                            }
-
-                                            div { class: "field-block align-end",
-                                                Button {
-                                                    r#type: "button",
-                                                    class: if row.is_locked() { "btn btn-warning btn-sm".to_string() } else { "btn btn-danger btn-sm".to_string() },
-                                                    aria_label: "Remove entry row".to_string(),
-                                                    onclick: move |_| handle_remove_row(index),
-                                                    if row.is_locked() {
-                                                        "Unlink"
-                                                    } else {
-                                                        "Remove"
+                                        td {
+                                            input {
+                                                class: "input",
+                                                r#type: "text",
+                                                r#autocomplete: "off",
+                                                placeholder: "Optional note",
+                                                value: row.memo.clone(),
+                                                readonly: row.is_locked(),
+                                                disabled: row.is_locked(),
+                                                oninput: move |e| {
+                                                    if !entry_rows.read()[index].is_locked() {
+                                                        entry_rows.write()[index].memo = e.value();
                                                     }
+                                                },
+                                            }
+                                        }
+
+                                        td {
+                                            input {
+                                                class: "input",
+                                                r#type: "text",
+                                                r#autocomplete: "off",
+                                                inputmode: "decimal",
+                                                placeholder: "0.00",
+                                                value: row.debit_amount_str.clone(),
+                                                readonly: row.is_locked(),
+                                                disabled: row.is_locked(),
+                                                oninput: move |e| {
+                                                    if entry_rows.read()[index].is_locked() {
+                                                        return;
+                                                    }
+                                                    let value = e.value();
+                                                    let mut rows = entry_rows.write();
+                                                    rows[index].debit_amount_str = value;
+                                                    if !rows[index].debit_amount_str.trim().is_empty() {
+                                                        rows[index].credit_amount_str.clear();
+                                                    }
+                                                },
+                                            }
+                                        }
+
+                                        td {
+                                            input {
+                                                class: "input",
+                                                r#type: "text",
+                                                r#autocomplete: "off",
+                                                inputmode: "decimal",
+                                                placeholder: "0.00",
+                                                value: row.credit_amount_str.clone(),
+                                                readonly: row.is_locked(),
+                                                disabled: row.is_locked(),
+                                                oninput: move |e| {
+                                                    if entry_rows.read()[index].is_locked() {
+                                                        return;
+                                                    }
+                                                    let value = e.value();
+                                                    let mut rows = entry_rows.write();
+                                                    rows[index].credit_amount_str = value;
+                                                    if !rows[index].credit_amount_str.trim().is_empty() {
+                                                        rows[index].debit_amount_str.clear();
+                                                    }
+                                                },
+                                            }
+                                        }
+
+                                        td { class: "align-end",
+                                            Button {
+                                                r#type: "button",
+                                                class: if row.is_locked() { "btn btn-warning btn-sm".to_string() } else { "btn btn-danger btn-sm".to_string() },
+                                                aria_label: "Remove entry row".to_string(),
+                                                onclick: move |_| handle_remove_row(index),
+                                                if row.is_locked() {
+                                                    "Unlink"
+                                                } else {
+                                                    "Remove"
                                                 }
                                             }
                                         }

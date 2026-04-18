@@ -457,8 +457,7 @@ table {
 .editor-shell,
 .empty-state,
 .auth-panel,
-.entry-row,
-.composer-summary {
+.entry-row {
   position: relative;
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur));
@@ -473,8 +472,7 @@ table {
 .editor-shell::before,
 .empty-state::before,
 .auth-panel::before,
-.entry-row::before,
-.composer-summary::before {
+.entry-row::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -491,8 +489,7 @@ table {
 .section-card,
 .table-card,
 .editor-shell,
-.empty-state,
-.composer-summary {
+.empty-state {
   padding: 24px;
 }
 
@@ -654,8 +651,7 @@ table {
    FORMS
    ============================================================ */
 
-.form-grid,
-.entry-grid {
+.form-grid {
   display: grid;
   gap: 12px;
 }
@@ -726,6 +722,14 @@ table {
   border-color: rgba(255, 181, 156, 0.5);
   box-shadow: 0 0 0 3px rgba(255, 181, 156, 0.12);
   outline: none;
+}
+
+.input[disabled],
+.select[disabled],
+.textarea[disabled] {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
 }
 
 /* ============================================================
@@ -957,7 +961,6 @@ table {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 20px;
 }
 
 .summary-metrics {
@@ -993,11 +996,6 @@ table {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.entry-grid {
-  grid-template-columns: 1.4fr 1.3fr 0.85fr 0.85fr auto;
-  align-items: end;
 }
 
 .transaction-title {
@@ -1143,8 +1141,7 @@ table {
 @media (max-width: 1100px) {
   .metric-grid,
   .form-grid.three-up,
-  .form-grid.four-up,
-  .entry-grid {
+  .form-grid.four-up {
     grid-template-columns: 1fr;
   }
 
@@ -1180,8 +1177,7 @@ table {
   .section-card,
   .table-card,
   .editor-shell,
-  .empty-state,
-  .composer-summary {
+  .empty-state {
     padding: 16px;
   }
 
