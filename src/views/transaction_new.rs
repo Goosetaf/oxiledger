@@ -259,12 +259,12 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
     };
 
     // Determine the locked bank entry row direction:
-    // positive amount → inflow → credit to bank account (credit row)
-    // negative amount → outflow → debit from bank account (debit row)
+    // positive amount → inflow → debit to bank account (debit row)
+    // negative amount → outflow → credit from bank account (credit row)
     let (debit_str, credit_str) = if prefill.amount >= rust_decimal::Decimal::ZERO {
-        (String::new(), prefill.amount.abs().to_string())
-    } else {
         (prefill.amount.abs().to_string(), String::new())
+    } else {
+        (String::new(), prefill.amount.abs().to_string())
     };
 
     let locked_row = EntryRow {
