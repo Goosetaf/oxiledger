@@ -264,6 +264,13 @@ pub fn BankAccounts() -> Element {
                                                 },
                                                 "View"
                                             }
+                                            Link {
+                                                class: "btn btn-secondary btn-sm",
+                                                to: crate::Route::BankAccountEdit {
+                                                    id: account.id,
+                                                },
+                                                "Edit"
+                                            }
                                             if account.is_manual {
                                                 Link {
                                                     class: "btn btn-secondary btn-sm",

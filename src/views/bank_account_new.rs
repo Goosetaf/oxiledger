@@ -117,87 +117,83 @@ pub fn ManualBankAccountForm(
             div { class: "message message-error", "{err}" }
         }
 
-        section { class: "editor-shell",
-            form { class: "stack-lg", onsubmit: handle_submit,
+        form { class: "stack-lg", onsubmit: handle_submit,
 
-                div { class: "glass-card",
-                    div { class: "form-grid two-up",
-                        div { class: "field-block",
-                            label { class: "field-label", r#for: "ba-name", "Account name" }
-                            input {
-                                id: "ba-name",
-                                class: "input",
-                                r#type: "text",
-                                placeholder: "e.g. Main Checking",
-                                required: true,
-                                value: name,
-                                oninput: move |e| name.set(e.value()),
-                            }
+            div { class: "form-grid two-up",
+                div { class: "field-block",
+                    label { class: "field-label", r#for: "ba-name", "Account name" }
+                    input {
+                        id: "ba-name",
+                        class: "input",
+                        r#type: "text",
+                        placeholder: "e.g. Main Checking",
+                        required: true,
+                        value: name,
+                        oninput: move |e| name.set(e.value()),
+                    }
+                }
+                div { class: "field-block",
+                    label { class: "field-label", r#for: "ba-currency", "Currency" }
+                    input {
+                        id: "ba-currency",
+                        class: "input",
+                        r#type: "text",
+                        placeholder: "EUR",
+                        maxlength: 10,
+                        required: true,
+                        value: currency,
+                        oninput: move |e| currency.set(e.value()),
+                    }
+                }
+                div { class: "field-block",
+                    label { class: "field-label", r#for: "ba-iban", "IBAN (optional)" }
+                    input {
+                        id: "ba-iban",
+                        class: "input",
+                        r#type: "text",
+                        placeholder: "e.g. FI21 1234 5600 0007 85",
+                        value: iban,
+                        oninput: move |e| iban.set(e.value()),
+                    }
+                }
+                div { class: "field-block",
+                    label { class: "field-label", r#for: "ba-account", "Ledger account" }
+                    select {
+                        id: "ba-account",
+                        class: "select",
+                        required: true,
+                        onchange: move |e| internal_account_id_str.set(e.value()),
+                        option {
+                            value: "",
+                            disabled: true,
+                            selected: internal_account_id_str().is_empty(),
+                            "Select a ledger account"
                         }
-                        div { class: "field-block",
-                            label { class: "field-label", r#for: "ba-currency", "Currency" }
-                            input {
-                                id: "ba-currency",
-                                class: "input",
-                                r#type: "text",
-                                placeholder: "EUR",
-                                maxlength: 10,
-                                required: true,
-                                value: currency,
-                                oninput: move |e| currency.set(e.value()),
-                            }
-                        }
-                        div { class: "field-block",
-                            label { class: "field-label", r#for: "ba-iban", "IBAN (optional)" }
-                            input {
-                                id: "ba-iban",
-                                class: "input",
-                                r#type: "text",
-                                placeholder: "e.g. FI21 1234 5600 0007 85",
-                                value: iban,
-                                oninput: move |e| iban.set(e.value()),
-                            }
-                        }
-                        div { class: "field-block",
-                            label { class: "field-label", r#for: "ba-account", "Ledger account" }
-                            select {
-                                id: "ba-account",
-                                class: "select",
-                                required: true,
-                                onchange: move |e| internal_account_id_str.set(e.value()),
-                                option {
-                                    value: "",
-                                    disabled: true,
-                                    selected: internal_account_id_str().is_empty(),
-                                    "Select a ledger account"
-                                }
-                                for acc in internal_accounts.iter() {
-                                    option {
-                                        value: "{acc.id}",
-                                        selected: internal_account_id_str() == acc.id.to_string(),
-                                        {
-                                            match acc.code.as_deref() {
-                                                Some(code) => format!("{} - {}", code, acc.name),
-                                                None => acc.name.clone(),
-                                            }
-                                        }
+                        for acc in internal_accounts.iter() {
+                            option {
+                                value: "{acc.id}",
+                                selected: internal_account_id_str() == acc.id.to_string(),
+                                {
+                                    match acc.code.as_deref() {
+                                        Some(code) => format!("{} - {}", code, acc.name),
+                                        None => acc.name.clone(),
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
 
-                div { class: "actions-row justify-end",
-                    button {
-                        class: "btn btn-primary",
-                        r#type: "submit",
-                        disabled: submitting,
-                        if submitting {
-                            "Saving..."
-                        } else {
-                            "Save manual account"
-                        }
+            div { class: "actions-row justify-end",
+                button {
+                    class: "btn btn-primary",
+                    r#type: "submit",
+                    disabled: submitting,
+                    if submitting {
+                        "Saving..."
+                    } else {
+                        "Save manual account"
                     }
                 }
             }

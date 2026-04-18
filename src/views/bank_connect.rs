@@ -613,10 +613,10 @@ pub fn BankConnect(source_id: Option<Uuid>) -> Element {
                     div { class: "message message-error", "{err}" }
                 }
 
-                section { class: "glass-card",
+                section { class: "glass-card editor-shell",
                     div { class: "stack-lg",
                         div { class: "field-block",
-                            label { class: "field-label", r#for: "connect-method", "Method" }
+                            label { class: "field-label", r#for: "connect-method", "Provider" }
                             select {
                                 id: "connect-method",
                                 class: "select",
@@ -626,7 +626,7 @@ pub fn BankConnect(source_id: Option<Uuid>) -> Element {
                                     value: "",
                                     disabled: true,
                                     selected: selected_method().is_empty(),
-                                    "Choose a method"
+                                    "Choose a provider"
                                 }
                                 if source_id.is_none() {
                                     option { value: "manual", "Manual" }
@@ -639,16 +639,16 @@ pub fn BankConnect(source_id: Option<Uuid>) -> Element {
                             }
                         }
                     }
-                }
 
-                if selected_method() == "manual" && source_id.is_none() {
-                    crate::views::bank_account_new::ManualBankAccountForm {
-                        internal_accounts,
-                        submitting: manual_submitting(),
-                        onsubmit: handle_manual_submit,
+                    if selected_method() == "manual" && source_id.is_none() {
+                        crate::views::bank_account_new::ManualBankAccountForm {
+                            internal_accounts,
+                            submitting: manual_submitting(),
+                            onsubmit: handle_manual_submit,
+                        }
+                    } else if !selected_method().is_empty() {
+                        BankConnectAspsp { provider_id: selected_method(), source_id }
                     }
-                } else if !selected_method().is_empty() {
-                    BankConnectAspsp { provider_id: selected_method(), source_id }
                 }
             }
         }
@@ -709,115 +709,111 @@ fn BankConnectAspsp(provider_id: String, source_id: Option<Uuid>) -> Element {
             div { class: "message message-info", "Redirecting to bank authorization..." }
         }
 
-        section { class: "glass-card",
-            div { class: "form-grid three-up",
-                div { class: "field-block",
-                    label { class: "field-label", r#for: "country-filter", "Country (ISO)" }
-                    input {
-                        id: "country-filter",
-                        class: "input",
-                        r#type: "text",
-                        placeholder: if provider_id == "gocardless" { "Required, e.g. FI, SE, DE" } else { "e.g. FI, SE, DE" },
-                        maxlength: 2,
-                        value: country_filter,
-                        oninput: move |e| country_filter.set(e.value()),
-                    }
-                }
-                div { class: "field-block",
-                    label { class: "field-label", r#for: "bank-search", "Search" }
-                    input {
-                        id: "bank-search",
-                        class: "input",
-                        r#type: "text",
-                        placeholder: "Search by bank name...",
-                        value: search_text,
-                        oninput: move |e| search_text.set(e.value()),
-                    }
+        div { class: "form-grid three-up",
+            div { class: "field-block",
+                label { class: "field-label", r#for: "country-filter", "Country (ISO)" }
+                input {
+                    id: "country-filter",
+                    class: "input",
+                    r#type: "text",
+                    placeholder: if provider_id == "gocardless" { "Required, e.g. FI, SE, DE" } else { "e.g. FI, SE, DE" },
+                    maxlength: 2,
+                    value: country_filter,
+                    oninput: move |e| country_filter.set(e.value()),
                 }
             }
+            div { class: "field-block",
+                label { class: "field-label", r#for: "bank-search", "Search" }
+                input {
+                    id: "bank-search",
+                    class: "input",
+                    r#type: "text",
+                    placeholder: "Search by bank name...",
+                    value: search_text,
+                    oninput: move |e| search_text.set(e.value()),
+                }
+            }
+        }
 
-            if provider_id == "gocardless" && country_filter().trim().is_empty() {
-                div { class: "message message-info",
-                    "Choose a country to load GoCardless institutions."
-                }
-            } else if aspsps_resource().is_none() {
-                div { class: "message message-info", "Loading banks..." }
-            } else if filtered.is_empty() {
-                div { class: "empty-state",
-                    p { class: "supporting-text", "No banks found matching your filter." }
-                }
-            } else {
-                table { class: "data-table",
-                    thead {
-                        tr {
-                            th { "Bank" }
-                            th { "Country" }
-                            th { class: "col-right", "Action" }
-                        }
+        if provider_id == "gocardless" && country_filter().trim().is_empty() {
+            div { class: "message message-info", "Choose a country to load GoCardless institutions." }
+        } else if aspsps_resource().is_none() {
+            div { class: "message message-info", "Loading banks..." }
+        } else if filtered.is_empty() {
+            div { class: "empty-state",
+                p { class: "supporting-text", "No banks found matching your filter." }
+            }
+        } else {
+            table { class: "data-table",
+                thead {
+                    tr {
+                        th { "Bank" }
+                        th { "Country" }
+                        th { class: "col-right", "Action" }
                     }
-                    tbody {
-                        for aspsp in filtered {
-                            tr {
-                                td {
-                                    div { class: "stack-sm",
-                                        span { class: "label-strong", "{aspsp.name}" }
-                                    }
+                }
+                tbody {
+                    for aspsp in filtered {
+                        tr {
+                            td {
+                                div { class: "stack-sm",
+                                    span { class: "label-strong", "{aspsp.name}" }
                                 }
-                                td { class: "mono muted", "{aspsp.country}" }
-                                td { class: "col-right",
-                                    button {
-                                        class: "btn btn-primary btn-sm",
-                                        r#type: "button",
-                                        disabled: selecting(),
-                                        onclick: {
-                                            let institution_id = aspsp
-                                                .institution_id
-                                                .clone()
-                                                .unwrap_or_else(|| aspsp.name.clone());
-                                            let institution_name = aspsp.name.clone();
-                                            let institution_country = aspsp.country.clone();
+                            }
+                            td { class: "mono muted", "{aspsp.country}" }
+                            td { class: "col-right",
+                                button {
+                                    class: "btn btn-primary btn-sm",
+                                    r#type: "button",
+                                    disabled: selecting(),
+                                    onclick: {
+                                        let institution_id = aspsp
+                                            .institution_id
+                                            .clone()
+                                            .unwrap_or_else(|| aspsp.name.clone());
+                                        let institution_name = aspsp.name.clone();
+                                        let institution_country = aspsp.country.clone();
+                                        let provider_id = provider_id.clone();
+                                        let mut select_error = select_error;
+                                        let mut selecting = selecting;
+                                        let source_id = source_id;
+                                        move |_| {
                                             let provider_id = provider_id.clone();
-                                            let mut select_error = select_error;
-                                            let mut selecting = selecting;
-                                            let source_id = source_id;
-                                            move |_| {
-                                                let provider_id = provider_id.clone();
-                                                let institution_id = institution_id.clone();
-                                                let institution_name = institution_name.clone();
-                                                let institution_country = institution_country.clone();
-                                                async move {
-                                                    select_error.set(None);
-                                                    selecting.set(true);
+                                            let institution_id = institution_id.clone();
+                                            let institution_name = institution_name.clone();
+                                            let institution_country = institution_country.clone();
+                                            async move {
+                                                select_error.set(None);
+                                                selecting.set(true);
 
-                                                    match start_bank_auth(
-                                                            provider_id.clone(),
-                                                            institution_id,
-                                                            institution_name,
-                                                            institution_country,
-                                                            source_id,
-                                                        )
-                                                        .await
-                                                    {
-                                                        Ok(redirect_url) => {
-                                                            #[cfg(feature = "web")]
-                                                            {
-                                                                use web_sys::window;
-                                                                if let Some(win) = window() {
-                                                                    let _ = win.location().set_href(&redirect_url);
-                                                                }
+                                                match start_bank_auth(
+                                                        provider_id.clone(),
+                                                        institution_id,
+                                                        institution_name,
+                                                        institution_country,
+                                                        source_id,
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(redirect_url) => {
+                                                        #[cfg(feature = "web")]
+                                                        {
+                                                            use web_sys::window;
+                                                            if let Some(win) = window() {
+                                                                let _ = win.location().set_href(&redirect_url);
                                                             }
-                                                            let _ = redirect_url;
                                                         }
-                                                        Err(e) => {
-                                                            select_error.set(Some(e.to_string()));
-                                                            selecting.set(false);
-                                                        }
+                                                        let _ = redirect_url;
+                                                    }
+                                                    Err(e) => {
+                                                        select_error.set(Some(e.to_string()));
+                                                        selecting.set(false);
                                                     }
                                                 }
                                             }
-                                        },
-                                        "Connect"
-                                    }
+                                        }
+                                    },
+                                    "Connect"
                                 }
                             }
                         }

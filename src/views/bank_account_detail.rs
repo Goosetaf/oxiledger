@@ -418,6 +418,13 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                         }
                     }
                     div { class: "actions-row",
+                        Link {
+                            class: "btn btn-secondary",
+                            to: crate::Route::BankAccountEdit {
+                                id,
+                            },
+                            "Edit"
+                        }
                         if is_manual {
                             Link {
                                 class: "btn btn-secondary",
