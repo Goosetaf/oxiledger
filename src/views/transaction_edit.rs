@@ -1,11 +1,12 @@
 use crate::{
     models::{
         account::Account,
-        transaction::{
-            CreateTransactionRequest, EntryType, JournalEntry, JournalEntryInput, Transaction,
-        },
+        transaction::{CreateTransactionRequest, EntryType, JournalEntry, Transaction},
     },
-    views::transaction_form::{EntryRow, TransactionForm},
+    views::{
+        transaction_form::{EntryRow, TransactionForm},
+        transaction_new::{entry_rows_to_inputs, list_pending_bank_transaction_prefills},
+    },
 };
 use dioxus::prelude::*;
 use uuid::Uuid;
@@ -13,6 +14,7 @@ use uuid::Uuid;
 #[cfg(feature = "server")]
 use {
     crate::models::account::{AccountType, NormalBalance},
+    crate::views::transaction_new::validate_linked_bank_transactions,
     rust_decimal::Decimal,
 };
 
@@ -143,6 +145,8 @@ async fn update_transaction(id: Uuid, req: CreateTransactionRequest) -> Result<(
             .begin()
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        validate_linked_bank_transactions(&mut tx, &req, user_id, Some(id)).await?;
 
         let updated = sqlx::query!(
             r#"UPDATE transactions
@@ -291,6 +295,11 @@ pub fn EditTransaction(id: Uuid) -> Element {
     });
     let mut form_error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
+    let pending_bank_txns_resource = use_resource(move || async move {
+        let date = chrono::NaiveDate::parse_from_str(&txn_date(), "%Y-%m-%d")
+            .unwrap_or(transaction.date);
+        list_pending_bank_transaction_prefills(date.to_string()).await
+    });
 
     let handle_submit = move |e: Event<FormData>| {
         e.prevent_default();
@@ -299,24 +308,7 @@ pub fn EditTransaction(id: Uuid) -> Element {
             submitting.set(true);
             form_error.set(None);
 
-            let entries: Vec<JournalEntryInput> = entry_rows()
-                .iter()
-                .filter_map(|row| {
-                    let account_id = Uuid::parse_str(&row.account_id_str).ok()?;
-                    let (entry_type, amount) = row.journal_entry()?;
-                    Some(JournalEntryInput {
-                        account_id,
-                        entry_type,
-                        amount,
-                        memo: if row.memo.trim().is_empty() {
-                            None
-                        } else {
-                            Some(row.memo.clone())
-                        },
-                        bank_transaction_id: row.locked_bank_transaction_id,
-                    })
-                })
-                .collect();
+            let entries = entry_rows_to_inputs(&entry_rows());
 
             let date = chrono::NaiveDate::parse_from_str(&txn_date(), "%Y-%m-%d")
                 .unwrap_or(transaction.date);
@@ -346,11 +338,12 @@ pub fn EditTransaction(id: Uuid) -> Element {
     rsx! {
         TransactionForm {
             heading: "Edit transaction".to_string(),
-            subtitle: "Adjust the transaction header and entry lines while keeping the journal balanced."
+            subtitle: "Adjust the transaction header and entry lines while keeping the journal balanced. Only same-date bank transactions can be linked together."
                 .to_string(),
             submit_label: "Save changes".to_string(),
             submitting_label: "Saving changes...".to_string(),
             accounts,
+            pending_bank_txns: pending_bank_txns_resource,
             txn_date,
             txn_desc,
             txn_ref,

@@ -2,6 +2,7 @@ use crate::{
     components::button::Button,
     models::{
         account::Account,
+        bank_sync::BankTransactionPrefill,
         transaction::{EntryType, JournalEntry},
     },
 };
@@ -97,6 +98,7 @@ pub fn TransactionForm(
     submit_label: String,
     submitting_label: String,
     accounts: Vec<Account>,
+    pending_bank_txns: Resource<Result<Vec<BankTransactionPrefill>, ServerFnError>>,
     mut txn_date: Signal<String>,
     mut txn_desc: Signal<String>,
     mut txn_ref: Signal<String>,
@@ -105,6 +107,42 @@ pub fn TransactionForm(
     submitting: ReadSignal<bool>,
     onsubmit: Callback<Event<FormData>>,
 ) -> Element {
+    let rows = entry_rows();
+    let pending_bank_txn_state = pending_bank_txns();
+    let pending_bank_txn_list = match pending_bank_txn_state.clone() {
+        Some(Ok(txns)) => txns,
+        _ => vec![],
+    };
+
+    let selected_bank_txn_ids: Vec<Uuid> = rows
+        .iter()
+        .filter_map(|row| row.locked_bank_transaction_id)
+        .collect();
+
+    let available_bank_txns_by_row: Vec<Vec<BankTransactionPrefill>> = rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            pending_bank_txn_list
+                .iter()
+                .filter(|txn| {
+                    txn.internal_account_id.to_string() == row.account_id_str
+                        && !selected_bank_txn_ids.iter().any(|selected_id| {
+                            *selected_id == txn.bank_transaction_id
+                                && row.locked_bank_transaction_id != Some(txn.bank_transaction_id)
+                        })
+                })
+                .filter(|txn| {
+                    rows.iter().enumerate().all(|(other_index, other_row)| {
+                        other_index == index
+                            || other_row.locked_bank_transaction_id != Some(txn.bank_transaction_id)
+                    })
+                })
+                .cloned()
+                .collect()
+        })
+        .collect();
+
     let debit_total = use_memo(move || {
         entry_rows()
             .iter()
@@ -144,18 +182,24 @@ pub fn TransactionForm(
         let rows = entry_rows.read();
         let is_locked = rows.get(index).map(|r| r.is_locked()).unwrap_or(false);
         drop(rows);
-        // Locked rows require a confirm dialog before removal.
         if is_locked {
+            // Locked rows require confirmation before unlinking.
             let confirmed = web_sys_confirm(
                 "This row is linked to a bank transaction. Removing it will unlink the bank transaction and reset it to pending. Continue?",
             );
             if !confirmed {
                 return;
             }
-        }
-        let mut rows = entry_rows.write();
-        if rows.len() > 2 {
-            rows.remove(index);
+            // Reset to a blank unlocked row rather than removing it, so the
+            // form always keeps at least two lines available.
+            let mut rows = entry_rows.write();
+            rows[index] = EntryRow::new();
+        } else {
+            // Unlocked rows are physically removed only when more than 2 exist.
+            let mut rows = entry_rows.write();
+            if rows.len() > 2 {
+                rows.remove(index);
+            }
         }
     };
 
@@ -257,13 +301,14 @@ pub fn TransactionForm(
                                 thead {
                                     tr {
                                         th { "Account" }
+                                        th { "Bank txn" }
                                         th { "Memo" }
                                         th { "Debit" }
                                         th { "Credit" }
                                         th { class: "col-actions", "Actions" }
                                     }
                                 }
-                                for (index , row) in entry_rows().iter().cloned().enumerate() {
+                                for (index , row) in rows.iter().cloned().enumerate() {
                                     tr { class: if row.is_locked() { "entry-row-locked" } else { "" },
                                         td {
                                             select {
@@ -286,6 +331,72 @@ pub fn TransactionForm(
                                                         value: "{account.id}",
                                                         selected: row.account_id_str == account.id.to_string(),
                                                         "{account_option_label(account)}"
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        td {
+                                            {
+                                                let available_bank_txns = available_bank_txns_by_row[index].clone();
+                                                let options = available_bank_txns.clone();
+                                                rsx! {
+                                                    if row.is_locked() {
+                                                        span { class: "tiny-text muted", "Linked" }
+                                                    } else if pending_bank_txn_state.is_none() {
+                                                        span { class: "tiny-text muted", "Loading..." }
+                                                    } else if pending_bank_txn_state.as_ref().is_some_and(Result::is_err) {
+                                                        span { class: "tiny-text text-negative", "Lookup failed" }
+                                                    } else if available_bank_txns.is_empty() {
+                                                        span { class: "tiny-text muted", "No same-date matches" }
+                                                    } else {
+                                                        select {
+                                                            class: "select",
+                                                            r#autocomplete: "off",
+                                                            onchange: move |e| {
+                                                                let value = e.value();
+                                                                if value.is_empty() {
+                                                                    return;
+                                                                }
+                                                                let Ok(bank_txn_id) = Uuid::parse_str(&value) else {
+                                                                    return;
+                                                                };
+                                                                let Some(selected) = available_bank_txns
+                                                                    .iter()
+                                                                    .find(|txn| txn.bank_transaction_id == bank_txn_id)
+                                                                    .cloned()
+                                                                else {
+                                                                    return;
+                                                                };
+
+                                                                let (debit_amount_str, credit_amount_str) =
+                                                                    if selected.amount >= Decimal::ZERO {
+                                                                        (selected.amount.abs().to_string(), String::new())
+                                                                    } else {
+                                                                        (String::new(), selected.amount.abs().to_string())
+                                                                    };
+
+                                                                let mut rows = entry_rows.write();
+                                                                rows[index].account_id_str = selected.internal_account_id.to_string();
+                                                                if rows[index].memo.trim().is_empty() {
+                                                                    rows[index].memo = selected.description;
+                                                                }
+                                                                rows[index].debit_amount_str = debit_amount_str;
+                                                                rows[index].credit_amount_str = credit_amount_str;
+                                                                rows[index].locked_bank_transaction_id = Some(selected.bank_transaction_id);
+                                                            },
+                                                            option {
+                                                                value: "",
+                                                                selected: true,
+                                                                "Link bank transaction"
+                                                            }
+                                                            for txn in options {
+                                                                option {
+                                                                    value: "{txn.bank_transaction_id}",
+                                                                    "{txn.amount} {txn.currency} - {txn.description}"
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
