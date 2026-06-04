@@ -1,7 +1,8 @@
 use crate::{
     components::button::Button,
     models::bank_sync::{
-        BankAccountBalanceComparison, BankAccountSummary, BankTransaction, SyncResult,
+        BankAccountBalanceComparison, BankAccountSummary, BankTransaction,
+        BankTransactionOverview, SyncResult,
     },
 };
 use dioxus::prelude::*;
@@ -194,6 +195,95 @@ pub async fn list_bank_transactions(id: Uuid) -> Result<Vec<BankTransaction>, Se
     Ok(vec![])
 }
 
+#[get("/api/bank-accounts/:id/transactions/all")]
+pub async fn list_all_bank_transactions(
+    id: Uuid,
+) -> Result<Vec<BankTransactionOverview>, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use crate::server::auth::{extract_context, require_auth};
+
+        let (pool, cookies) = extract_context().await?;
+        let user_id = require_auth(&pool, &cookies).await?;
+
+        crate::server::bank_sync_cache::maybe_lazy_sync_for_user(&pool, user_id, id)
+            .await
+            .map_err(ServerFnError::new)?;
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                bt.id        AS "id: Uuid",
+                bt.date,
+                bt.amount    AS "amount: rust_decimal::Decimal",
+                bt.currency,
+                bt.description,
+                bt.reference,
+                bt.status,
+                bt.imported_at AS "imported_at: chrono::DateTime<chrono::Utc>",
+                t.id         AS "linked_transaction_id?: Uuid"
+            FROM bank_transactions bt
+            LEFT JOIN journal_entries je ON je.id = bt.linked_journal_entry_id
+            LEFT JOIN transactions    t  ON t.id  = je.transaction_id
+            WHERE bt.bank_account_id = $1 AND bt.user_id = $2
+            ORDER BY bt.date DESC, bt.imported_at DESC
+            "#,
+            id,
+            user_id
+        )
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        return Ok(rows
+            .into_iter()
+            .map(|row| BankTransactionOverview {
+                id: row.id,
+                date: row.date,
+                amount: row.amount,
+                currency: row.currency,
+                description: row.description,
+                reference: row.reference,
+                status: row.status,
+                linked_transaction_id: row.linked_transaction_id,
+                imported_at: row.imported_at,
+            })
+            .collect());
+    }
+
+    #[allow(unreachable_code)]
+    Ok(vec![])
+}
+
+#[post("/api/bank-transactions/:id/restore")]
+pub async fn restore_bank_transaction(id: Uuid) -> Result<(), ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use crate::server::auth::{extract_context, require_auth};
+
+        let (pool, cookies) = extract_context().await?;
+        let user_id = require_auth(&pool, &cookies).await?;
+
+        let result = sqlx::query!(
+            "UPDATE bank_transactions SET status = 'pending'
+             WHERE id = $1 AND user_id = $2 AND status = 'dismissed'",
+            id,
+            user_id
+        )
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(ServerFnError::new(
+                "Transaction not found or not in dismissed state",
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 #[post("/api/bank-transactions/:id/dismiss")]
 pub async fn dismiss_bank_transaction(id: Uuid) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
@@ -310,13 +400,16 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
     let nav = use_navigator();
     let account_resource = use_server_future(move || get_bank_account_detail(id))?;
     let mut balance_resource = use_resource(move || get_bank_account_balance(id));
-    let mut txns_resource = use_loader(move || list_bank_transactions(id))?;
+    let mut txns_resource = use_resource(move || list_all_bank_transactions(id));
+
+    let mut status_filter = use_signal(|| "pending");
 
     let mut action_error = use_signal(|| None::<String>);
     let mut action_success = use_signal(|| None::<String>);
     let mut syncing = use_signal(|| false);
     let mut dismissing = use_signal(|| None::<Uuid>);
     let mut confirm_dismiss = use_signal(|| None::<Uuid>);
+    let mut restoring = use_signal(|| None::<Uuid>);
     let mut disconnecting = use_signal(|| false);
     let mut confirm_disconnect = use_signal(|| false);
 
@@ -371,6 +464,16 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
         confirm_dismiss.set(None);
     };
 
+    let handle_restore = move |txn_id: Uuid| async move {
+        action_error.set(None);
+        restoring.set(Some(txn_id));
+        match restore_bank_transaction(txn_id).await {
+            Ok(_) => txns_resource.restart(),
+            Err(err) => action_error.set(Some(err.to_string())),
+        }
+        restoring.set(None);
+    };
+
     let handle_disconnect = move |_| async move {
         action_error.set(None);
         action_success.set(None);
@@ -390,7 +493,21 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
         }
     };
 
-    let txns = txns_resource.read().clone();
+    let all_txns: Vec<BankTransactionOverview> = txns_resource()
+        .and_then(Result::ok)
+        .unwrap_or_default();
+
+    let filter = status_filter();
+    let filtered_txns: Vec<_> = all_txns
+        .iter()
+        .filter(|txn| txn.status == filter)
+        .cloned()
+        .collect();
+
+    let pending_count  = all_txns.iter().filter(|t| t.status == "pending").count();
+    let linked_count   = all_txns.iter().filter(|t| t.status == "linked").count();
+    let dismissed_count = all_txns.iter().filter(|t| t.status == "dismissed").count();
+
     let account_name = account.display_name().to_string();
     let is_manual = account.is_manual;
 
@@ -420,17 +537,13 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                     div { class: "actions-row",
                         Link {
                             class: "btn btn-secondary",
-                            to: crate::Route::BankAccountEdit {
-                                id,
-                            },
+                            to: crate::Route::BankAccountEdit { id },
                             "Edit"
                         }
                         if is_manual {
                             Link {
                                 class: "btn btn-secondary",
-                                to: crate::Route::BankConnect {
-                                    source_id: Some(id),
-                                },
+                                to: crate::Route::BankConnect { source_id: Some(id) },
                                 "Connect to bank"
                             }
                         } else {
@@ -438,22 +551,14 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                 class: "btn btn-secondary".to_string(),
                                 disabled: syncing(),
                                 onclick: handle_sync,
-                                if syncing() {
-                                    "Syncing..."
-                                } else {
-                                    "Sync now"
-                                }
+                                if syncing() { "Syncing..." } else { "Sync now" }
                             }
                             if confirm_disconnect() {
                                 Button {
                                     class: "btn btn-danger".to_string(),
                                     disabled: disconnecting(),
                                     onclick: handle_disconnect,
-                                    if disconnecting() {
-                                        "Disconnecting..."
-                                    } else {
-                                        "Confirm disconnect"
-                                    }
+                                    if disconnecting() { "Disconnecting..." } else { "Confirm disconnect" }
                                 }
                                 Button {
                                     class: "btn btn-secondary".to_string(),
@@ -516,11 +621,7 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                         "{diff}"
                                     }
                                     p { class: "tiny-text muted",
-                                        if diff == Decimal::ZERO {
-                                            "Balanced"
-                                        } else {
-                                            "Bank vs. ledger mismatch"
-                                        }
+                                        if diff == Decimal::ZERO { "Balanced" } else { "Bank vs. ledger mismatch" }
                                     }
                                 } else {
                                     p { class: "metric-value muted", "-" }
@@ -530,12 +631,40 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                     },
                 }
 
-                if txns.is_empty() {
+                // Filter tabs.
+                div { class: "actions-row",
+                    Button {
+                        class: if filter == "pending" { "btn btn-primary btn-sm".to_string() } else { "btn btn-secondary btn-sm".to_string() },
+                        onclick: move |_| status_filter.set("pending"),
+                        "Pending ({pending_count})"
+                    }
+                    Button {
+                        class: if filter == "linked" { "btn btn-primary btn-sm".to_string() } else { "btn btn-secondary btn-sm".to_string() },
+                        onclick: move |_| status_filter.set("linked"),
+                        "Linked ({linked_count})"
+                    }
+                    Button {
+                        class: if filter == "dismissed" { "btn btn-primary btn-sm".to_string() } else { "btn btn-secondary btn-sm".to_string() },
+                        onclick: move |_| status_filter.set("dismissed"),
+                        "Dismissed ({dismissed_count})"
+                    }
+                }
+
+                // Transaction list.
+                if txns_resource().is_none() {
+                    div { class: "message message-info", "Loading transactions..." }
+                } else if filtered_txns.is_empty() {
                     div { class: "empty-state",
                         div { class: "empty-icon", "+" }
-                        h3 { class: "section-title", "No pending transactions" }
+                        h3 { class: "section-title",
+                            if filter == "pending" { "No pending transactions" }
+                            else if filter == "linked" { "No linked transactions" }
+                            else { "No dismissed transactions" }
+                        }
                         p { class: "supporting-text",
-                            "All imported transactions have been posted or dismissed."
+                            if filter == "pending" { "All imported transactions have been posted or dismissed." }
+                            else if filter == "linked" { "No bank transactions have been linked to journal entries yet." }
+                            else { "No transactions have been dismissed." }
                         }
                     }
                 } else {
@@ -549,16 +678,14 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                             }
                         }
                         tbody {
-                            for txn in txns {
+                            for txn in filtered_txns {
                                 tr {
                                     td { class: "mono muted", "{txn.date}" }
                                     td {
                                         div { class: "stack-sm",
                                             span { class: "label-strong", "{txn.description}" }
                                             if let Some(ref r) = txn.reference {
-                                                span { class: "tiny-text mono muted",
-                                                    "{r}"
-                                                }
+                                                span { class: "tiny-text mono muted", "{r}" }
                                             }
                                         }
                                     }
@@ -569,32 +696,46 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                     }
                                     td { class: "col-right",
                                         div { class: "actions-row justify-end",
-                                            Link {
-                                                class: "btn btn-primary btn-sm",
-                                                to: crate::Route::NewTransactionFromBank {
-                                                    bank_txn_id: txn.id,
-                                                },
-                                                "Post"
-                                            }
-                                            // Dismiss with inline confirmation.
-                                            if confirm_dismiss() == Some(txn.id) {
-                                                span { class: "tiny-text muted", "Dismiss?" }
-                                                Button {
-                                                    class: "btn btn-danger btn-sm".to_string(),
-                                                    disabled: dismissing() == Some(txn.id),
-                                                    onclick: move |_| handle_dismiss(txn.id),
-                                                    "Yes, dismiss"
+                                            if txn.status == "pending" {
+                                                Link {
+                                                    class: "btn btn-primary btn-sm",
+                                                    to: crate::Route::NewTransactionFromBank { bank_txn_id: txn.id },
+                                                    "Post"
                                                 }
+                                                if confirm_dismiss() == Some(txn.id) {
+                                                    span { class: "tiny-text muted", "Dismiss?" }
+                                                    Button {
+                                                        class: "btn btn-danger btn-sm".to_string(),
+                                                        disabled: dismissing() == Some(txn.id),
+                                                        onclick: move |_| handle_dismiss(txn.id),
+                                                        "Yes, dismiss"
+                                                    }
+                                                    Button {
+                                                        class: "btn btn-secondary btn-sm".to_string(),
+                                                        onclick: move |_| confirm_dismiss.set(None),
+                                                        "Cancel"
+                                                    }
+                                                } else {
+                                                    Button {
+                                                        class: "btn btn-secondary btn-sm".to_string(),
+                                                        onclick: move |_| confirm_dismiss.set(Some(txn.id)),
+                                                        "Dismiss"
+                                                    }
+                                                }
+                                            } else if txn.status == "linked" {
+                                                if let Some(txn_id) = txn.linked_transaction_id {
+                                                    Link {
+                                                        class: "btn btn-secondary btn-sm",
+                                                        to: crate::Route::EditTransaction { id: txn_id },
+                                                        "View journal entry"
+                                                    }
+                                                }
+                                            } else if txn.status == "dismissed" {
                                                 Button {
                                                     class: "btn btn-secondary btn-sm".to_string(),
-                                                    onclick: move |_| confirm_dismiss.set(None),
-                                                    "Cancel"
-                                                }
-                                            } else {
-                                                Button {
-                                                    class: "btn btn-secondary btn-sm".to_string(),
-                                                    onclick: move |_| confirm_dismiss.set(Some(txn.id)),
-                                                    "Dismiss"
+                                                    disabled: restoring() == Some(txn.id),
+                                                    onclick: move |_| handle_restore(txn.id),
+                                                    if restoring() == Some(txn.id) { "Restoring..." } else { "Restore" }
                                                 }
                                             }
                                         }
@@ -608,3 +749,4 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
         }
     }
 }
+

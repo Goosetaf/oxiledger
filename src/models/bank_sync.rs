@@ -146,6 +146,31 @@ pub struct SyncResult {
     pub skipped_count: u32,
 }
 
+/// A bank transaction row enriched for the account overview, including the
+/// id of the linked journal transaction (if any).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BankTransactionOverview {
+    pub id: Uuid,
+    pub date: NaiveDate,
+    /// Signed amount: positive = inflow, negative = outflow.
+    pub amount: Decimal,
+    pub currency: String,
+    pub description: String,
+    pub reference: Option<String>,
+    /// "pending" | "linked" | "dismissed"
+    pub status: String,
+    /// The id of the journal `transactions` row this bank transaction is
+    /// linked to (via `journal_entries`), if any.
+    pub linked_transaction_id: Option<Uuid>,
+    pub imported_at: DateTime<Utc>,
+}
+
+impl BankTransactionOverview {
+    pub fn is_inflow(&self) -> bool {
+        self.amount >= Decimal::ZERO
+    }
+}
+
 /// Data needed to pre-fill a new transaction form from a bank transaction.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BankTransactionPrefill {
