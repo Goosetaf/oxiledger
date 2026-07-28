@@ -8,7 +8,7 @@ pub async fn create_manual_bank_account(
     name: String,
     iban: Option<String>,
     currency: String,
-    internal_account_id: Uuid,
+    internal_account_id: Option<Uuid>,
 ) -> Result<Uuid, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -27,33 +27,36 @@ pub async fn create_manual_bank_account(
             return Err(ServerFnError::new("Currency is required"));
         }
 
-        let count = sqlx::query_scalar!(
-            "SELECT COUNT(*) FROM accounts WHERE id = $1 AND user_id = $2",
-            internal_account_id,
-            user_id
-        )
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .unwrap_or(0);
+        // Verify the selected ledger account belongs to this user (only when provided).
+        if let Some(account_id) = internal_account_id {
+            let count = sqlx::query_scalar!(
+                "SELECT COUNT(*) FROM accounts WHERE id = $1 AND user_id = $2",
+                account_id,
+                user_id
+            )
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .unwrap_or(0);
 
-        if count == 0 {
-            return Err(ServerFnError::new("Ledger account not found"));
+            if count == 0 {
+                return Err(ServerFnError::new("Ledger account not found"));
+            }
         }
 
         let iban_opt = iban.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
 
-        let id = sqlx::query_scalar!(
+        let id: Uuid = sqlx::query_scalar(
             r#"INSERT INTO bank_accounts
                 (user_id, internal_account_id, name, iban, currency, is_manual)
             VALUES ($1, $2, $3, $4, $5, TRUE)
             RETURNING id"#,
-            user_id,
-            internal_account_id,
-            name_trimmed,
-            iban_opt,
-            currency_trimmed
         )
+        .bind(user_id)
+        .bind(internal_account_id)
+        .bind(name_trimmed)
+        .bind(iban_opt)
+        .bind(currency_trimmed)
         .fetch_one(&pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -70,7 +73,7 @@ pub struct ManualBankAccountFields {
     pub name: String,
     pub iban: Option<String>,
     pub currency: String,
-    pub internal_account_id: Uuid,
+    pub internal_account_id: Option<Uuid>,
 }
 
 #[component]
@@ -89,11 +92,15 @@ pub fn ManualBankAccountForm(
         e.prevent_default();
         local_error.set(None);
 
-        let internal_account_id = match Uuid::parse_str(&internal_account_id_str()) {
-            Ok(id) => id,
-            Err(_) => {
-                local_error.set(Some("Please select a ledger account.".to_string()));
-                return;
+        let internal_account_id = if internal_account_id_str().is_empty() {
+            None
+        } else {
+            match Uuid::parse_str(&internal_account_id_str()) {
+                Ok(id) => Some(id),
+                Err(_) => {
+                    local_error.set(Some("Invalid ledger account selection.".to_string()));
+                    return;
+                }
             }
         };
 
@@ -157,17 +164,15 @@ pub fn ManualBankAccountForm(
                     }
                 }
                 div { class: "field-block",
-                    label { class: "field-label", r#for: "ba-account", "Ledger account" }
+                    label { class: "field-label", r#for: "ba-account", "Ledger account (optional)" }
                     select {
                         id: "ba-account",
                         class: "select",
-                        required: true,
                         onchange: move |e| internal_account_id_str.set(e.value()),
                         option {
                             value: "",
-                            disabled: true,
                             selected: internal_account_id_str().is_empty(),
-                            "Select a ledger account"
+                            "No linked account"
                         }
                         for acc in internal_accounts.iter() {
                             option {

@@ -21,9 +21,9 @@ pub async fn list_bank_accounts() -> Result<Vec<BankAccountSummary>, ServerFnErr
                 ba.name,
                 ba.iban,
                 ba.currency,
-                ba.internal_account_id,
+                ba.internal_account_id AS "internal_account_id?: Uuid",
                 ba.is_manual,
-                a.name AS internal_account_name,
+                a.name AS "internal_account_name?",
                 bc.aspsp_name,
                 bc.aspsp_country,
                 bc.provider_id AS "provider_id?: String",
@@ -31,7 +31,7 @@ pub async fn list_bank_accounts() -> Result<Vec<BankAccountSummary>, ServerFnErr
                 ba.last_synced_at
             FROM bank_accounts ba
             LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
-            JOIN accounts a ON a.id = ba.internal_account_id
+            LEFT JOIN accounts a ON a.id = ba.internal_account_id
             WHERE ba.user_id = $1
             ORDER BY COALESCE(bc.aspsp_name, ba.name), ba.name
             "#,
@@ -233,7 +233,9 @@ pub fn BankAccounts() -> Element {
                                             span { class: "tiny-text muted", "{account.currency}" }
                                         }
                                     }
-                                    td { class: "muted", "{account.internal_account_name}" }
+                                    td { class: "muted",
+                                        {account.internal_account_name.as_deref().unwrap_or("—")}
+                                    }
                                     td { class: "muted",
                                         if account.is_manual {
                                             "N/A"

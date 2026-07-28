@@ -48,7 +48,7 @@ pub(crate) async fn validate_linked_bank_transactions(
             bt.date,
             bt.amount AS "amount: Decimal",
             bt.status,
-            ba.internal_account_id AS "internal_account_id: Uuid",
+        ba.internal_account_id AS "internal_account_id?: Uuid",
             linked_je.transaction_id AS "existing_transaction_id?: Uuid"
         FROM bank_transactions bt
         JOIN bank_accounts ba ON ba.id = bt.bank_account_id
@@ -79,10 +79,12 @@ pub(crate) async fn validate_linked_bank_transactions(
             ));
         }
 
-        if entry.account_id != row.internal_account_id {
-            return Err(ServerFnError::new(
-                "A linked bank transaction must use its mapped internal account",
-            ));
+        if let Some(expected_id) = row.internal_account_id {
+            if entry.account_id != expected_id {
+                return Err(ServerFnError::new(
+                    "A linked bank transaction must use its mapped internal account",
+                ));
+            }
         }
 
         let expected_entry_type = if row.amount >= Decimal::ZERO {
@@ -247,11 +249,12 @@ pub async fn get_bank_transaction_prefill(
 
         let row = sqlx::query!(
             r#"SELECT bt.id, bt.date, bt.amount, bt.description, bt.reference,
-                      ba.internal_account_id, a.name AS internal_account_name,
+                      ba.internal_account_id AS "internal_account_id?: Uuid",
+                      a.name AS "internal_account_name?",
                       bt.currency
                FROM bank_transactions bt
                JOIN bank_accounts ba ON ba.id = bt.bank_account_id
-               JOIN accounts a ON a.id = ba.internal_account_id
+               LEFT JOIN accounts a ON a.id = ba.internal_account_id
                WHERE bt.id = $1 AND bt.user_id = $2 AND bt.status = 'pending'"#,
             bank_txn_id,
             user_id
@@ -295,13 +298,14 @@ pub async fn list_pending_bank_transaction_prefills(
 
         let rows = sqlx::query!(
             r#"SELECT bt.id, bt.date, bt.amount, bt.description, bt.reference,
-                      ba.internal_account_id, a.name AS internal_account_name,
+                      ba.internal_account_id AS "internal_account_id?: Uuid",
+                      a.name AS "internal_account_name?",
                       bt.currency
                FROM bank_transactions bt
                JOIN bank_accounts ba ON ba.id = bt.bank_account_id
-               JOIN accounts a ON a.id = ba.internal_account_id
+               LEFT JOIN accounts a ON a.id = ba.internal_account_id
                WHERE bt.user_id = $1 AND bt.status = 'pending' AND bt.date = $2
-               ORDER BY COALESCE(a.code, ''), a.name, bt.amount DESC, bt.imported_at DESC"#,
+               ORDER BY COALESCE(a.code, ''), COALESCE(a.name, ''), bt.amount DESC, bt.imported_at DESC"#,
             user_id,
             date
         )
@@ -347,8 +351,8 @@ pub async fn suggest_transfer_matches(
                 bt.amount,
                 bt.description,
                 bt.reference,
-                ba.internal_account_id,
-                a.name AS internal_account_name,
+                ba.internal_account_id AS "internal_account_id?: Uuid",
+                a.name AS "internal_account_name?",
                 bt.currency
             FROM bank_transactions source
             JOIN bank_transactions bt
@@ -359,9 +363,9 @@ pub async fn suggest_transfer_matches(
                AND bt.date = source.date
                AND bt.amount = -source.amount
             JOIN bank_accounts ba ON ba.id = bt.bank_account_id
-            JOIN accounts a ON a.id = ba.internal_account_id
+            LEFT JOIN accounts a ON a.id = ba.internal_account_id
             WHERE source.id = $1 AND source.user_id = $2 AND source.status = 'pending'
-            ORDER BY COALESCE(a.code, ''), a.name, bt.imported_at DESC
+            ORDER BY COALESCE(a.code, ''), COALESCE(a.name, ''), bt.imported_at DESC
             "#,
             bank_txn_id,
             user_id
@@ -499,7 +503,7 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
     };
 
     let locked_row = EntryRow {
-        account_id_str: prefill.internal_account_id.to_string(),
+        account_id_str: prefill.internal_account_id.map(|id| id.to_string()).unwrap_or_default(),
         memo: prefill.description.clone(),
         debit_amount_str: debit_str,
         credit_amount_str: credit_str,
@@ -514,7 +518,7 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
     let mut submitting = use_signal(|| false);
     let pending_bank_txns_resource = use_resource(move || pending_bank_transactions_for_date(&txn_date()));
     let transfer_suggestions_resource = use_resource(move || suggest_transfer_matches(bank_txn_id));
-    let source_account_name = prefill.internal_account_name.clone();
+    let source_account_name = prefill.internal_account_name.clone().unwrap_or_default();
     let selected_bank_txn_ids: Vec<Uuid> = entry_rows()
         .iter()
         .filter_map(|row| row.locked_bank_transaction_id)
@@ -567,9 +571,9 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
                     div { class: "actions-row",
                         div { class: "stack-sm",
                             strong { "Possible internal transfer" }
-                            span {
+                        span {
                                 class: "supporting-text",
-                                "Match {suggestion.internal_account_name} {suggestion.amount} {suggestion.currency} on {suggestion.date}"
+                                "Match {suggestion.internal_account_name.as_deref().unwrap_or(\"Unknown account\")} {suggestion.amount} {suggestion.currency} on {suggestion.date}"
                             }
                         }
                         Button {
@@ -592,14 +596,14 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
                                             && row.debit_amount_str.trim().is_empty()
                                             && row.credit_amount_str.trim().is_empty()
                                     }) {
-                                        blank_row.account_id_str = suggestion.internal_account_id.to_string();
+                                        blank_row.account_id_str = suggestion.internal_account_id.map(|id| id.to_string()).unwrap_or_default();
                                         blank_row.memo = suggestion.description.clone();
                                         blank_row.debit_amount_str = debit_amount_str;
                                         blank_row.credit_amount_str = credit_amount_str;
                                         blank_row.locked_bank_transaction_id = Some(suggestion.bank_transaction_id);
                                     } else {
                                         rows.push(EntryRow {
-                                            account_id_str: suggestion.internal_account_id.to_string(),
+                                            account_id_str: suggestion.internal_account_id.map(|id| id.to_string()).unwrap_or_default(),
                                             memo: suggestion.description.clone(),
                                             debit_amount_str,
                                             credit_amount_str,
@@ -608,7 +612,7 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
                                     }
                                     txn_desc.set(transfer_description(
                                         &source_account_name,
-                                        &suggestion.internal_account_name,
+                                        suggestion.internal_account_name.as_deref().unwrap_or("Unknown account"),
                                     ));
                                 }
                             },

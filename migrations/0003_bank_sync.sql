@@ -23,7 +23,7 @@ CREATE TABLE bank_accounts (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id              UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     bank_connection_id   UUID REFERENCES bank_connections(id) ON DELETE CASCADE,
-    internal_account_id  UUID NOT NULL REFERENCES accounts(id),
+    internal_account_id  UUID REFERENCES accounts(id),           -- nullable; NULL = no linked ledger account
     provider_account_uid VARCHAR(255),                   -- uid from the provider; NULL for manual
     iban                 VARCHAR(50),
     name                 VARCHAR(255),
@@ -35,7 +35,8 @@ CREATE TABLE bank_accounts (
 );
 
 CREATE INDEX idx_bank_accounts_user             ON bank_accounts(user_id);
-CREATE INDEX idx_bank_accounts_internal_account ON bank_accounts(internal_account_id);
+CREATE INDEX idx_bank_accounts_internal_account ON bank_accounts(internal_account_id)
+    WHERE internal_account_id IS NOT NULL;
 
 -- Provider uniqueness only applies to connected (non-manual) accounts.
 CREATE UNIQUE INDEX idx_bank_accounts_provider_uid

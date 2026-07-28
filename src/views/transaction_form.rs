@@ -126,7 +126,11 @@ pub fn TransactionForm(
             pending_bank_txn_list
                 .iter()
                 .filter(|txn| {
-                    txn.internal_account_id.to_string() == row.account_id_str
+                    // A txn with no linked account is eligible for any row;
+                    // otherwise it must match the row's selected account.
+                    txn.internal_account_id
+                        .map(|id| id.to_string() == row.account_id_str)
+                        .unwrap_or(true)
                         && !selected_bank_txn_ids.iter().any(|selected_id| {
                             *selected_id == txn.bank_transaction_id
                                 && row.locked_bank_transaction_id != Some(txn.bank_transaction_id)
@@ -377,7 +381,7 @@ pub fn TransactionForm(
                                                                     };
 
                                                                 let mut rows = entry_rows.write();
-                                                                rows[index].account_id_str = selected.internal_account_id.to_string();
+                                                                rows[index].account_id_str = selected.internal_account_id.map(|id| id.to_string()).unwrap_or_default();
                                                                 if rows[index].memo.trim().is_empty() {
                                                                     rows[index].memo = selected.description;
                                                                 }

@@ -394,7 +394,7 @@ pub async fn map_bank_account(
     provider_account_name: Option<String>,
     provider_account_iban: Option<String>,
     provider_account_currency: String,
-    internal_account_id: Uuid,
+    internal_account_id: Option<Uuid>,
 ) -> Result<Uuid, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -907,14 +907,18 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
         }
 
         for (uid, name, iban, currency, internal_id_str) in &sels {
-            let internal_id = match Uuid::parse_str(internal_id_str) {
-                Ok(id) => id,
-                Err(_) => {
-                    mapping_error.set(Some(format!(
-                        "Please select a ledger account for: {}",
-                        name.as_deref().or(iban.as_deref()).unwrap_or(uid)
-                    )));
-                    return;
+            let internal_id = if internal_id_str.is_empty() {
+                None
+            } else {
+                match Uuid::parse_str(internal_id_str) {
+                    Ok(id) => Some(id),
+                    Err(_) => {
+                        mapping_error.set(Some(format!(
+                            "Invalid ledger account for: {}",
+                            name.as_deref().or(iban.as_deref()).unwrap_or(uid)
+                        )));
+                        return;
+                    }
                 }
             };
 

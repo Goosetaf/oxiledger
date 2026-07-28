@@ -27,9 +27,9 @@ pub async fn get_bank_account_detail(id: Uuid) -> Result<BankAccountSummary, Ser
                 ba.name,
                 ba.iban,
                 ba.currency,
-                ba.internal_account_id,
+                ba.internal_account_id AS "internal_account_id?: Uuid",
                 ba.is_manual,
-                a.name AS internal_account_name,
+                a.name AS "internal_account_name?",
                 bc.aspsp_name,
                 bc.aspsp_country,
                 bc.provider_id AS "provider_id?: String",
@@ -37,7 +37,7 @@ pub async fn get_bank_account_detail(id: Uuid) -> Result<BankAccountSummary, Ser
                 ba.last_synced_at
             FROM bank_accounts ba
             LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
-            JOIN accounts a ON a.id = ba.internal_account_id
+            LEFT JOIN accounts a ON a.id = ba.internal_account_id
             WHERE ba.id = $1 AND ba.user_id = $2
             "#,
             id,
@@ -103,29 +103,32 @@ pub async fn get_bank_account_balance(
         .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
         // Compute internal balance: debit_sum - credit_sum of all journal entries
-        // for the linked internal account.
-        let internal_account_id: Uuid = record.get("internal_account_id");
+        // for the linked internal account. Zero if no account is linked.
+        let internal_account_id: Option<Uuid> = record.get("internal_account_id");
         let is_manual: bool = record.get("is_manual");
 
-        let bal_row = sqlx::query!(
-            r#"
-            SELECT
-                COALESCE(SUM(CASE WHEN je.entry_type = 'Debit' THEN je.amount ELSE 0::numeric END), 0::numeric)
-                    AS "debit_sum!: rust_decimal::Decimal",
-                COALESCE(SUM(CASE WHEN je.entry_type = 'Credit' THEN je.amount ELSE 0::numeric END), 0::numeric)
-                    AS "credit_sum!: rust_decimal::Decimal"
-            FROM journal_entries je
-            JOIN transactions t ON t.id = je.transaction_id
-            WHERE je.account_id = $1 AND t.user_id = $2
-            "#,
-            internal_account_id,
-            user_id
-        )
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        let internal_balance = bal_row.debit_sum - bal_row.credit_sum;
+        let internal_balance = if let Some(account_id) = internal_account_id {
+            let bal_row = sqlx::query!(
+                r#"
+                SELECT
+                    COALESCE(SUM(CASE WHEN je.entry_type = 'Debit' THEN je.amount ELSE 0::numeric END), 0::numeric)
+                        AS "debit_sum!: rust_decimal::Decimal",
+                    COALESCE(SUM(CASE WHEN je.entry_type = 'Credit' THEN je.amount ELSE 0::numeric END), 0::numeric)
+                        AS "credit_sum!: rust_decimal::Decimal"
+                FROM journal_entries je
+                JOIN transactions t ON t.id = je.transaction_id
+                WHERE je.account_id = $1 AND t.user_id = $2
+                "#,
+                account_id,
+                user_id
+            )
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+            bal_row.debit_sum - bal_row.credit_sum
+        } else {
+            Decimal::ZERO
+        };
 
         // Manual accounts have no live balance from a provider.
         if is_manual {
@@ -142,7 +145,11 @@ pub async fn get_bank_account_balance(
         let bank_balance_currency =
             bank_balance_amount.map(|_| record.get::<String, _>("currency"));
 
-        let difference = bank_balance_amount.map(|b| b - internal_balance);
+        // Only show a difference when we have both sides.
+        let difference = match (bank_balance_amount, internal_account_id) {
+            (Some(bank), Some(_)) => Some(bank - internal_balance),
+            _ => None,
+        };
 
         return Ok(BankAccountBalanceComparison {
             bank_account_id: id,

@@ -35,7 +35,8 @@ pub struct BankAccountRecord {
     pub user_id: Uuid,
     /// `None` for manually-created accounts.
     pub bank_connection_id: Option<Uuid>,
-    pub internal_account_id: Uuid,
+    /// `None` when not linked to any ledger account.
+    pub internal_account_id: Option<Uuid>,
     /// `None` for manually-created accounts.
     pub provider_account_uid: Option<String>,
     pub iban: Option<String>,
@@ -54,8 +55,10 @@ pub struct BankAccountSummary {
     pub name: Option<String>,
     pub iban: Option<String>,
     pub currency: String,
-    pub internal_account_id: Uuid,
-    pub internal_account_name: String,
+    /// `None` when not linked to any ledger account.
+    pub internal_account_id: Option<Uuid>,
+    /// `None` when not linked to any ledger account.
+    pub internal_account_name: Option<String>,
     pub aspsp_name: Option<String>,
     pub aspsp_country: Option<String>,
     /// `None` for manually-created accounts.
@@ -179,9 +182,9 @@ pub struct BankTransactionPrefill {
     pub amount: Decimal,
     pub description: String,
     pub reference: Option<String>,
-    /// The internal ledger account linked to the bank account.
-    pub internal_account_id: Uuid,
-    pub internal_account_name: String,
+    /// The internal ledger account linked to the bank account; `None` if unlinked.
+    pub internal_account_id: Option<Uuid>,
+    pub internal_account_name: Option<String>,
     pub currency: String,
 }
 

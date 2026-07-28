@@ -37,7 +37,7 @@ async fn update_bank_account(
     name: String,
     iban: Option<String>,
     currency: String,
-    internal_account_id: Uuid,
+    internal_account_id: Option<Uuid>,
 ) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -118,7 +118,9 @@ pub fn BankAccountEdit(id: Uuid) -> Element {
     let mut name = use_signal(|| account.name.clone().unwrap_or_default());
     let mut iban = use_signal(|| account.iban.clone().unwrap_or_default());
     let mut currency = use_signal(|| account.currency.clone());
-    let mut internal_account_id = use_signal(|| account.internal_account_id.to_string());
+    let mut internal_account_id = use_signal(|| {
+        account.internal_account_id.map(|id| id.to_string()).unwrap_or_default()
+    });
     let mut form_error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -129,12 +131,16 @@ pub fn BankAccountEdit(id: Uuid) -> Element {
             submitting.set(true);
             form_error.set(None);
 
-            let selected_internal_account = match Uuid::parse_str(&internal_account_id()) {
-                Ok(value) => value,
-                Err(_) => {
-                    form_error.set(Some("Please select a linked ledger account".to_string()));
-                    submitting.set(false);
-                    return;
+            let selected_internal_account = if internal_account_id().trim().is_empty() {
+                None
+            } else {
+                match Uuid::parse_str(&internal_account_id()) {
+                    Ok(value) => Some(value),
+                    Err(_) => {
+                        form_error.set(Some("Invalid ledger account selection".to_string()));
+                        submitting.set(false);
+                        return;
+                    }
                 }
             };
 
@@ -254,9 +260,8 @@ pub fn BankAccountEdit(id: Uuid) -> Element {
                                     onchange: move |e| internal_account_id.set(e.value()),
                                     option {
                                         value: "",
-                                        disabled: true,
                                         selected: internal_account_id().is_empty(),
-                                        "Select a ledger account"
+                                        "No linked account"
                                     }
                                     for account in internal_accounts.iter() {
                                         option {
