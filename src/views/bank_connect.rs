@@ -711,15 +711,43 @@ fn BankConnectAspsp(provider_id: String, source_id: Option<Uuid>) -> Element {
 
         div { class: "form-grid three-up",
             div { class: "field-block",
-                label { class: "field-label", r#for: "country-filter", "Country (ISO)" }
-                input {
+                label { class: "field-label", r#for: "country-filter", "Country" }
+                select {
                     id: "country-filter",
-                    class: "input",
-                    r#type: "text",
-                    placeholder: if provider_id == "gocardless" { "Required, e.g. FI, SE, DE" } else { "e.g. FI, SE, DE" },
-                    maxlength: 2,
+                    class: "select",
                     value: country_filter,
-                    oninput: move |e| country_filter.set(e.value()),
+                    onchange: move |e| country_filter.set(e.value()),
+                    option { value: "", "All countries" }
+                    option { value: "AT", "Austria (AT)" }
+                    option { value: "BE", "Belgium (BE)" }
+                    option { value: "BG", "Bulgaria (BG)" }
+                    option { value: "HR", "Croatia (HR)" }
+                    option { value: "CZ", "Czech Republic (CZ)" }
+                    option { value: "DK", "Denmark (DK)" }
+                    option { value: "EE", "Estonia (EE)" }
+                    option { value: "FI", "Finland (FI)" }
+                    option { value: "FR", "France (FR)" }
+                    option { value: "DE", "Germany (DE)" }
+                    option { value: "GR", "Greece (GR)" }
+                    option { value: "HU", "Hungary (HU)" }
+                    option { value: "IS", "Iceland (IS)" }
+                    option { value: "IE", "Ireland (IE)" }
+                    option { value: "IT", "Italy (IT)" }
+                    option { value: "LV", "Latvia (LV)" }
+                    option { value: "LI", "Liechtenstein (LI)" }
+                    option { value: "LT", "Lithuania (LT)" }
+                    option { value: "LU", "Luxembourg (LU)" }
+                    option { value: "MT", "Malta (MT)" }
+                    option { value: "NL", "Netherlands (NL)" }
+                    option { value: "NO", "Norway (NO)" }
+                    option { value: "PL", "Poland (PL)" }
+                    option { value: "PT", "Portugal (PT)" }
+                    option { value: "RO", "Romania (RO)" }
+                    option { value: "SK", "Slovakia (SK)" }
+                    option { value: "SI", "Slovenia (SI)" }
+                    option { value: "ES", "Spain (ES)" }
+                    option { value: "SE", "Sweden (SE)" }
+                    option { value: "GB", "United Kingdom (GB)" }
                 }
             }
             div { class: "field-block",
@@ -736,7 +764,7 @@ fn BankConnectAspsp(provider_id: String, source_id: Option<Uuid>) -> Element {
         }
 
         if provider_id == "gocardless" && country_filter().trim().is_empty() {
-            div { class: "message message-info", "Choose a country to load GoCardless institutions." }
+            div { class: "message message-info", "Select a country to load GoCardless institutions." }
         } else if aspsps_resource().is_none() {
             div { class: "message message-info", "Loading banks..." }
         } else if filtered.is_empty() {
