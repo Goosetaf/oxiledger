@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                ba.id,\n                ba.name,\n                ba.iban,\n                ba.currency,\n                ba.internal_account_id AS \"internal_account_id?: Uuid\",\n                ba.is_manual,\n                a.name AS \"internal_account_name?\",\n                bc.aspsp_name,\n                bc.aspsp_country,\n                bc.provider_id AS \"provider_id?: String\",\n                bc.access_valid_until,\n                ba.last_synced_at\n            FROM bank_accounts ba\n            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id\n            LEFT JOIN accounts a ON a.id = ba.internal_account_id\n            WHERE ba.id = $1 AND ba.user_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "iban",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "internal_account_id?: Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_manual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "internal_account_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "aspsp_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "aspsp_country",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "provider_id?: String",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "access_valid_until",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "last_synced_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "b6c86855e0b275d2e9f862481ff65888dcb8c74184e0aefb77e80f37a6301b82"
+}

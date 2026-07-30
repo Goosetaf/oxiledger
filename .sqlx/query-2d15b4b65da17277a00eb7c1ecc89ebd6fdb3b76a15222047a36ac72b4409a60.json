@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bank_transactions bt\n               SET status = 'pending', linked_journal_entry_id = NULL\n               FROM journal_entries je\n               WHERE je.transaction_id = $1\n                 AND je.bank_transaction_id = bt.id\n                 AND bt.user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2d15b4b65da17277a00eb7c1ecc89ebd6fdb3b76a15222047a36ac72b4409a60"
+}

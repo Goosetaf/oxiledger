@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    COALESCE(SUM(CASE WHEN je.entry_type = 'Debit' THEN je.amount ELSE 0::numeric END), 0::numeric)\n                        AS \"debit_sum!: rust_decimal::Decimal\",\n                    COALESCE(SUM(CASE WHEN je.entry_type = 'Credit' THEN je.amount ELSE 0::numeric END), 0::numeric)\n                        AS \"credit_sum!: rust_decimal::Decimal\"\n                FROM journal_entries je\n                JOIN transactions t ON t.id = je.transaction_id\n                WHERE je.account_id = $1 AND t.user_id = $2\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "debit_sum!: rust_decimal::Decimal",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 1,
+        "name": "credit_sum!: rust_decimal::Decimal",
+        "type_info": "Numeric"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "4f8cd05abb3ed0ab60a2e73c47666c0235c8929a231e84b5a5eb2a0272dd6cfc"
+}

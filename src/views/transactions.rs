@@ -62,6 +62,7 @@ async fn list_transactions() -> Result<Vec<Transaction>, ServerFnError> {
                 entry_type: row.entry_type,
                 amount: row.amount,
                 memo: row.memo,
+                bank_transaction_id: None,
             };
 
             if let Some(txn) = txn_map.get_mut(&tid) {
@@ -137,18 +138,43 @@ async fn delete_transaction(id: Uuid) -> Result<(), ServerFnError> {
         let (pool, cookies) = extract_context().await?;
         let user_id = require_auth(&pool, &cookies).await?;
 
+        let mut tx = pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        // Unlink any bank transactions attached to this transaction before the
+        // journal entries disappear, so they become visible again as pending.
+        sqlx::query!(
+            r#"UPDATE bank_transactions bt
+               SET status = 'pending', linked_journal_entry_id = NULL
+               FROM journal_entries je
+               WHERE je.transaction_id = $1
+                 AND je.bank_transaction_id = bt.id
+                 AND bt.user_id = $2"#,
+            id,
+            user_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
         let result = sqlx::query!(
             "DELETE FROM transactions WHERE id = $1 AND user_id = $2",
             id,
             user_id
         )
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
         if result.rows_affected() == 0 {
             return Err(ServerFnError::new("Transaction not found"));
         }
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
     }
 
     Ok(())

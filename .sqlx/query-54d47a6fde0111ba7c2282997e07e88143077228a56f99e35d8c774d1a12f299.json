@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ba.bank_connection_id, ba.is_manual, bc.provider_id, bc.provider_session_id\n            FROM bank_accounts ba\n            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id\n            WHERE ba.id = $1 AND ba.user_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bank_connection_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_manual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "provider_session_id",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "54d47a6fde0111ba7c2282997e07e88143077228a56f99e35d8c774d1a12f299"
+}

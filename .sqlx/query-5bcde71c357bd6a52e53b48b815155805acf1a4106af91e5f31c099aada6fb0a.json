@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bank_transactions\n               (bank_account_id, user_id, external_id, date, amount, currency, description, reference, status, imported_at)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Date",
+        "Numeric",
+        "Varchar",
+        "Text",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5bcde71c357bd6a52e53b48b815155805acf1a4106af91e5f31c099aada6fb0a"
+}

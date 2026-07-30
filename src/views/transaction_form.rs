@@ -2,12 +2,14 @@ use crate::{
     components::button::Button,
     models::{
         account::Account,
+        bank_sync::BankTransactionPrefill,
         transaction::{EntryType, JournalEntry},
     },
 };
 use dioxus::prelude::*;
 use rust_decimal::Decimal;
 use std::str::FromStr;
+use uuid::Uuid;
 
 #[derive(Clone, PartialEq)]
 pub struct EntryRow {
@@ -15,6 +17,10 @@ pub struct EntryRow {
     pub memo: String,
     pub debit_amount_str: String,
     pub credit_amount_str: String,
+    /// When `Some`, this row is locked — it came from an imported bank transaction
+    /// and cannot be edited by the user. It can only be removed (with confirmation),
+    /// which unlinks the bank transaction and resets it to `pending`.
+    pub locked_bank_transaction_id: Option<Uuid>,
 }
 
 impl EntryRow {
@@ -24,6 +30,7 @@ impl EntryRow {
             memo: String::new(),
             debit_amount_str: String::new(),
             credit_amount_str: String::new(),
+            locked_bank_transaction_id: None,
         }
     }
 
@@ -34,14 +41,20 @@ impl EntryRow {
                 memo: entry.memo.clone().unwrap_or_default(),
                 debit_amount_str: entry.amount.to_string(),
                 credit_amount_str: String::new(),
+                locked_bank_transaction_id: entry.bank_transaction_id,
             },
             EntryType::Credit => Self {
                 account_id_str: entry.account_id.to_string(),
                 memo: entry.memo.clone().unwrap_or_default(),
                 debit_amount_str: String::new(),
                 credit_amount_str: entry.amount.to_string(),
+                locked_bank_transaction_id: entry.bank_transaction_id,
             },
         }
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.locked_bank_transaction_id.is_some()
     }
 
     pub fn parse_amount(amount_str: &str) -> Option<Decimal> {
@@ -85,6 +98,7 @@ pub fn TransactionForm(
     submit_label: String,
     submitting_label: String,
     accounts: Vec<Account>,
+    pending_bank_txns: Resource<Result<Vec<BankTransactionPrefill>, ServerFnError>>,
     mut txn_date: Signal<String>,
     mut txn_desc: Signal<String>,
     mut txn_ref: Signal<String>,
@@ -93,6 +107,46 @@ pub fn TransactionForm(
     submitting: ReadSignal<bool>,
     onsubmit: Callback<Event<FormData>>,
 ) -> Element {
+    let rows = entry_rows();
+    let pending_bank_txn_state = pending_bank_txns();
+    let pending_bank_txn_list = match pending_bank_txn_state.clone() {
+        Some(Ok(txns)) => txns,
+        _ => vec![],
+    };
+
+    let selected_bank_txn_ids: Vec<Uuid> = rows
+        .iter()
+        .filter_map(|row| row.locked_bank_transaction_id)
+        .collect();
+
+    let available_bank_txns_by_row: Vec<Vec<BankTransactionPrefill>> = rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            pending_bank_txn_list
+                .iter()
+                .filter(|txn| {
+                    // A txn with no linked account is eligible for any row;
+                    // otherwise it must match the row's selected account.
+                    txn.internal_account_id
+                        .map(|id| id.to_string() == row.account_id_str)
+                        .unwrap_or(true)
+                        && !selected_bank_txn_ids.iter().any(|selected_id| {
+                            *selected_id == txn.bank_transaction_id
+                                && row.locked_bank_transaction_id != Some(txn.bank_transaction_id)
+                        })
+                })
+                .filter(|txn| {
+                    rows.iter().enumerate().all(|(other_index, other_row)| {
+                        other_index == index
+                            || other_row.locked_bank_transaction_id != Some(txn.bank_transaction_id)
+                    })
+                })
+                .cloned()
+                .collect()
+        })
+        .collect();
+
     let debit_total = use_memo(move || {
         entry_rows()
             .iter()
@@ -129,9 +183,27 @@ pub fn TransactionForm(
     };
 
     let mut handle_remove_row = move |index: usize| {
-        let mut rows = entry_rows.write();
-        if rows.len() > 2 {
-            rows.remove(index);
+        let rows = entry_rows.read();
+        let is_locked = rows.get(index).map(|r| r.is_locked()).unwrap_or(false);
+        drop(rows);
+        if is_locked {
+            // Locked rows require confirmation before unlinking.
+            let confirmed = web_sys_confirm(
+                "This row is linked to a bank transaction. Removing it will unlink the bank transaction and reset it to pending. Continue?",
+            );
+            if !confirmed {
+                return;
+            }
+            // Reset to a blank unlocked row rather than removing it, so the
+            // form always keeps at least two lines available.
+            let mut rows = entry_rows.write();
+            rows[index] = EntryRow::new();
+        } else {
+            // Unlocked rows are physically removed only when more than 2 exist.
+            let mut rows = entry_rows.write();
+            if rows.len() > 2 {
+                rows.remove(index);
+            }
         }
     };
 
@@ -229,94 +301,179 @@ pub fn TransactionForm(
                                 "+ Add line"
                             }
 
-                            div { class: "entry-list",
-                                for (index , row) in entry_rows().iter().cloned().enumerate() {
-                                    div { class: "entry-row",
-                                        div { class: "entry-grid",
-                                            div { class: "field-block",
-                                                label { class: "field-label", "Account" }
-                                                select {
-                                                    class: "select",
-                                                    r#autocomplete: "off",
-                                                    onchange: move |e| {
+                            table { class: "data-table",
+                                thead {
+                                    tr {
+                                        th { "Account" }
+                                        th { "Bank txn" }
+                                        th { "Memo" }
+                                        th { "Debit" }
+                                        th { "Credit" }
+                                        th { class: "col-actions", "Actions" }
+                                    }
+                                }
+                                for (index , row) in rows.iter().cloned().enumerate() {
+                                    tr { class: if row.is_locked() { "entry-row-locked" } else { "" },
+                                        td {
+                                            select {
+                                                class: "select",
+                                                r#autocomplete: "off",
+                                                disabled: row.is_locked(),
+                                                onchange: move |e| {
+                                                    if !entry_rows.read()[index].is_locked() {
                                                         entry_rows.write()[index].account_id_str = e.value();
-                                                    },
+                                                    }
+                                                },
+                                                option {
+                                                    value: "",
+                                                    disabled: true,
+                                                    selected: row.account_id_str.is_empty(),
+                                                    "Select an account"
+                                                }
+                                                for account in accounts.iter() {
                                                     option {
-                                                        value: "",
-                                                        disabled: true,
-                                                        selected: row.account_id_str.is_empty(),
-                                                        "Select an account"
+                                                        value: "{account.id}",
+                                                        selected: row.account_id_str == account.id.to_string(),
+                                                        "{account_option_label(account)}"
                                                     }
-                                                    for account in accounts.iter() {
-                                                        option {
-                                                            value: "{account.id}",
-                                                            selected: row.account_id_str == account.id.to_string(),
-                                                            "{account_option_label(account)}"
+                                                }
+                                            }
+                                        }
+
+                                        td {
+                                            {
+                                                let available_bank_txns = available_bank_txns_by_row[index].clone();
+                                                let options = available_bank_txns.clone();
+                                                rsx! {
+                                                    if row.is_locked() {
+                                                        span { class: "tiny-text muted", "Linked" }
+                                                    } else if pending_bank_txn_state.is_none() {
+                                                        span { class: "tiny-text muted", "Loading..." }
+                                                    } else if pending_bank_txn_state.as_ref().is_some_and(Result::is_err) {
+                                                        span { class: "tiny-text text-negative", "Lookup failed" }
+                                                    } else if available_bank_txns.is_empty() {
+                                                        span { class: "tiny-text muted", "No same-date matches" }
+                                                    } else {
+                                                        select {
+                                                            class: "select",
+                                                            r#autocomplete: "off",
+                                                            onchange: move |e| {
+                                                                let value = e.value();
+                                                                if value.is_empty() {
+                                                                    return;
+                                                                }
+                                                                let Ok(bank_txn_id) = Uuid::parse_str(&value) else {
+                                                                    return;
+                                                                };
+                                                                let Some(selected) = available_bank_txns
+                                                                    .iter()
+                                                                    .find(|txn| txn.bank_transaction_id == bank_txn_id)
+
+
+                                                                    .cloned() else {
+                                                                    return;
+                                                                };
+                                                                let (debit_amount_str, credit_amount_str) = if selected.amount >= Decimal::ZERO {
+                                                                    (selected.amount.abs().to_string(), String::new())
+                                                                } else {
+                                                                    (String::new(), selected.amount.abs().to_string())
+                                                                };
+                                                                let mut rows = entry_rows.write();
+                                                                rows[index].account_id_str = selected
+                                                                    .internal_account_id
+                                                                    .map(|id| id.to_string())
+                                                                    .unwrap_or_default();
+                                                                if rows[index].memo.trim().is_empty() {
+                                                                    rows[index].memo = selected.description;
+                                                                }
+                                                                rows[index].debit_amount_str = debit_amount_str;
+                                                                rows[index].credit_amount_str = credit_amount_str;
+                                                                rows[index].locked_bank_transaction_id = Some(selected.bank_transaction_id);
+                                                            },
+                                                            option { value: "", selected: true, "Link bank transaction" }
+                                                            for txn in options {
+                                                                option { value: "{txn.bank_transaction_id}", "{txn.amount} {txn.currency} - {txn.description}" }
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
+                                        }
 
-                                            div { class: "field-block",
-                                                label { class: "field-label", "Memo" }
-                                                input {
-                                                    class: "input",
-                                                    r#type: "text",
-                                                    r#autocomplete: "off",
-                                                    placeholder: "Optional note",
-                                                    value: row.memo.clone(),
-                                                    oninput: move |e| {
+                                        td {
+                                            input {
+                                                class: "input",
+                                                r#type: "text",
+                                                r#autocomplete: "off",
+                                                placeholder: "Optional note",
+                                                value: row.memo.clone(),
+                                                readonly: row.is_locked(),
+                                                disabled: row.is_locked(),
+                                                oninput: move |e| {
+                                                    if !entry_rows.read()[index].is_locked() {
                                                         entry_rows.write()[index].memo = e.value();
-                                                    },
-                                                }
+                                                    }
+                                                },
                                             }
+                                        }
 
-                                            div { class: "field-block",
-                                                label { class: "field-label", "Debit" }
-                                                input {
-                                                    class: "input",
-                                                    r#type: "text",
-                                                    r#autocomplete: "off",
-                                                    inputmode: "decimal",
-                                                    placeholder: "0.00",
-                                                    value: row.debit_amount_str.clone(),
-                                                    oninput: move |e| {
-                                                        let value = e.value();
-                                                        let mut rows = entry_rows.write();
-                                                        rows[index].debit_amount_str = value;
-                                                        if !rows[index].debit_amount_str.trim().is_empty() {
-                                                            rows[index].credit_amount_str.clear();
-                                                        }
-                                                    },
-                                                }
+                                        td {
+                                            input {
+                                                class: "input",
+                                                r#type: "text",
+                                                r#autocomplete: "off",
+                                                inputmode: "decimal",
+                                                placeholder: "0.00",
+                                                value: row.debit_amount_str.clone(),
+                                                readonly: row.is_locked(),
+                                                disabled: row.is_locked(),
+                                                oninput: move |e| {
+                                                    if entry_rows.read()[index].is_locked() {
+                                                        return;
+                                                    }
+                                                    let value = e.value();
+                                                    let mut rows = entry_rows.write();
+                                                    rows[index].debit_amount_str = value;
+                                                    if !rows[index].debit_amount_str.trim().is_empty() {
+                                                        rows[index].credit_amount_str.clear();
+                                                    }
+                                                },
                                             }
+                                        }
 
-                                            div { class: "field-block",
-                                                label { class: "field-label", "Credit" }
-                                                input {
-                                                    class: "input",
-                                                    r#type: "text",
-                                                    r#autocomplete: "off",
-                                                    inputmode: "decimal",
-                                                    placeholder: "0.00",
-                                                    value: row.credit_amount_str.clone(),
-                                                    oninput: move |e| {
-                                                        let value = e.value();
-                                                        let mut rows = entry_rows.write();
-                                                        rows[index].credit_amount_str = value;
-                                                        if !rows[index].credit_amount_str.trim().is_empty() {
-                                                            rows[index].debit_amount_str.clear();
-                                                        }
-                                                    },
-                                                }
+                                        td {
+                                            input {
+                                                class: "input",
+                                                r#type: "text",
+                                                r#autocomplete: "off",
+                                                inputmode: "decimal",
+                                                placeholder: "0.00",
+                                                value: row.credit_amount_str.clone(),
+                                                readonly: row.is_locked(),
+                                                disabled: row.is_locked(),
+                                                oninput: move |e| {
+                                                    if entry_rows.read()[index].is_locked() {
+                                                        return;
+                                                    }
+                                                    let value = e.value();
+                                                    let mut rows = entry_rows.write();
+                                                    rows[index].credit_amount_str = value;
+                                                    if !rows[index].credit_amount_str.trim().is_empty() {
+                                                        rows[index].debit_amount_str.clear();
+                                                    }
+                                                },
                                             }
+                                        }
 
-                                            div { class: "field-block align-end",
-                                                Button {
-                                                    r#type: "button",
-                                                    class: "btn btn-danger btn-sm".to_string(),
-                                                    aria_label: "Remove entry row".to_string(),
-                                                    onclick: move |_| handle_remove_row(index),
+                                        td { class: "align-end",
+                                            Button {
+                                                r#type: "button",
+                                                class: if row.is_locked() { "btn btn-warning btn-sm".to_string() } else { "btn btn-danger btn-sm".to_string() },
+                                                aria_label: "Remove entry row".to_string(),
+                                                onclick: move |_| handle_remove_row(index),
+                                                if row.is_locked() {
+                                                    "Unlink"
+                                                } else {
                                                     "Remove"
                                                 }
                                             }
@@ -361,4 +518,18 @@ pub fn TransactionForm(
             }
         }
     }
+}
+
+/// Show a browser confirm dialog; returns `true` if the user clicked OK.
+/// Returns `true` unconditionally outside the web feature (e.g. SSR).
+fn web_sys_confirm(message: &str) -> bool {
+    #[cfg(feature = "web")]
+    {
+        use web_sys::window;
+        if let Some(win) = window() {
+            return win.confirm_with_message(message).unwrap_or(false);
+        }
+    }
+    let _ = message;
+    true
 }

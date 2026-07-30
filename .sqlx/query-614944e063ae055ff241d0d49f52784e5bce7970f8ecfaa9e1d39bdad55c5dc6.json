@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                bt.id        AS \"id: Uuid\",\n                bt.date,\n                bt.amount    AS \"amount: rust_decimal::Decimal\",\n                bt.currency,\n                bt.description,\n                bt.reference,\n                bt.status,\n                bt.imported_at AS \"imported_at: chrono::DateTime<chrono::Utc>\",\n                t.id         AS \"linked_transaction_id?: Uuid\"\n            FROM bank_transactions bt\n            LEFT JOIN journal_entries je ON je.id = bt.linked_journal_entry_id\n            LEFT JOIN transactions    t  ON t.id  = je.transaction_id\n            WHERE bt.bank_account_id = $1 AND bt.user_id = $2\n            ORDER BY bt.date DESC, bt.imported_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id: Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "amount: rust_decimal::Decimal",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "currency",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "reference",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "imported_at: chrono::DateTime<chrono::Utc>",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "linked_transaction_id?: Uuid",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "614944e063ae055ff241d0d49f52784e5bce7970f8ecfaa9e1d39bdad55c5dc6"
+}

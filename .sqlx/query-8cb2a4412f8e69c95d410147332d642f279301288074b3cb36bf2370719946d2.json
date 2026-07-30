@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT provider_account_uid FROM bank_accounts\n                   WHERE user_id = $1 AND provider_account_uid = ANY($2)\n                   AND bank_connection_id IS DISTINCT FROM $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider_account_uid",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "8cb2a4412f8e69c95d410147332d642f279301288074b3cb36bf2370719946d2"
+}

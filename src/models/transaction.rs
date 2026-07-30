@@ -41,6 +41,9 @@ pub struct JournalEntry {
     pub entry_type: EntryType,
     pub amount: Decimal,
     pub memo: Option<String>,
+    /// Set when this entry was created from an imported bank transaction.
+    /// When present the entry is treated as locked in the UI.
+    pub bank_transaction_id: Option<Uuid>,
 }
 
 /// A transaction header with its journal entry lines.
@@ -72,6 +75,9 @@ pub struct JournalEntryInput {
     pub entry_type: EntryType,
     pub amount: Decimal,
     pub memo: Option<String>,
+    /// When set this entry is linked to an imported bank transaction.
+    /// The server function will update the `bank_transactions` row to `linked`.
+    pub bank_transaction_id: Option<Uuid>,
 }
 
 /// Request body for creating a new balanced transaction.

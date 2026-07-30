@@ -10,6 +10,7 @@ edition = "2021"
 dioxus = { version = "0.7.1", features = ["router", "fullstack"] }
 dioxus-router = "0.7.3"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde", "js"] }
 chrono = { version = "0.4", features = ["serde", "clock"] }
 rust_decimal = { version = "1", features = ["serde-with-str"] }
@@ -22,12 +23,16 @@ dioxus-server = { version = "0.7", optional = true }
 dotenvy = { version = "0.15", optional = true }
 tower-cookies = { version = "0.10", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
+tokio-cron-scheduler = { version = "0.15", optional = true }
 openidconnect = { version = "4", features = ["reqwest"], optional = true }
 reqwest = { version = "0.12", features = ["json"], default-features = false, optional = true }
+jsonwebtoken = { version = "9", optional = true }
+urlencoding = { version = "2", optional = true }
+web-sys = { version = "0.3", features = ["Window", "Location"], optional = true }
 
 [features]
 default = ["web"]
-web = ["dioxus/web"]
+web     = ["dioxus/web", "dep:web-sys"]
 desktop = ["dioxus/desktop"]
-mobile = ["dioxus/mobile"]
-server = ["dioxus/server", "dep:sqlx", "dep:argon2", "dep:axum", "dep:dioxus-server", "dep:dotenvy", "dep:tower-cookies", "dep:tokio", "dep:openidconnect", "dep:reqwest", "reqwest/rustls-tls"]
+mobile  = ["dioxus/mobile"]
+server  = ["dioxus/server", "dep:sqlx", "dep:argon2", "dep:axum", "dep:dioxus-server", "dep:dotenvy", "dep:tower-cookies", "dep:tokio", "dep:tokio-cron-scheduler", "dep:openidconnect", "dep:reqwest", "reqwest/rustls-tls", "dep:jsonwebtoken", "dep:urlencoding"]

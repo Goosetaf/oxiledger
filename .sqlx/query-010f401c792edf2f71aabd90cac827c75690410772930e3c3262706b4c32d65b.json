@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                bt.id,\n                bt.date,\n                bt.amount,\n                bt.description,\n                bt.reference,\n                ba.internal_account_id AS \"internal_account_id?: Uuid\",\n                a.name AS \"internal_account_name?\",\n                bt.currency\n            FROM bank_transactions source\n            JOIN bank_transactions bt\n                ON bt.user_id = source.user_id\n               AND bt.status = 'pending'\n               AND bt.id <> source.id\n               AND bt.bank_account_id <> source.bank_account_id\n               AND bt.date = source.date\n               AND bt.amount = -source.amount\n            JOIN bank_accounts ba ON ba.id = bt.bank_account_id\n            LEFT JOIN accounts a ON a.id = ba.internal_account_id\n            WHERE source.id = $1 AND source.user_id = $2 AND source.status = 'pending'\n            ORDER BY COALESCE(a.code, ''), COALESCE(a.name, ''), bt.imported_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "reference",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "internal_account_id?: Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "internal_account_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "currency",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "010f401c792edf2f71aabd90cac827c75690410772930e3c3262706b4c32d65b"
+}

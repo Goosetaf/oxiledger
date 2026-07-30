@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT bt.id, bt.date, bt.amount, bt.description, bt.reference,\n                      ba.internal_account_id AS \"internal_account_id?: Uuid\",\n                      a.name AS \"internal_account_name?\",\n                      bt.currency\n               FROM bank_transactions bt\n               JOIN bank_accounts ba ON ba.id = bt.bank_account_id\n               LEFT JOIN accounts a ON a.id = ba.internal_account_id\n               WHERE bt.user_id = $1 AND bt.status = 'pending' AND bt.date = $2\n               ORDER BY COALESCE(a.code, ''), COALESCE(a.name, ''), bt.amount DESC, bt.imported_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 2,
+        "name": "amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "reference",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "internal_account_id?: Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "internal_account_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "currency",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "9f1f8f76f1b59b8635e9c184262b1c5262aaff5ea8d6dc428cdd9b595b0d4999"
+}
