@@ -209,6 +209,10 @@ pub struct ProviderBankAccountInfo {
     pub name: Option<String>,
     pub iban: Option<String>,
     pub currency: String,
+    /// `true` when this provider account is already linked to a bank account
+    /// on a different connection.
+    #[serde(default)]
+    pub already_linked: bool,
 }
 
 /// An ASPSP (bank) as known to a provider — safe to send to the client.

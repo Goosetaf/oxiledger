@@ -860,7 +860,7 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
     };
 
     let internal_accounts = internal_accounts_resource.read().clone();
-    let mut selections: Signal<Vec<(String, Option<String>, Option<String>, String, String)>> =
+    let mut selections: Signal<Vec<(String, Option<String>, Option<String>, String, String, bool)>> =
         use_signal(|| {
             provider_accounts
                 .iter()
@@ -871,29 +871,54 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
                         a.iban.clone(),
                         a.currency.clone(),
                         String::new(),
+                        a.already_linked,
                     )
                 })
                 .collect()
         });
+    let mut selected_uid: Signal<Option<String>> = use_signal(|| {
+        if source_bank_account_id.is_some() {
+            provider_accounts.first().map(|a| a.uid.clone())
+        } else {
+            None
+        }
+    });
+
+    let has_linked = if source_bank_account_id.is_some() {
+        false
+    } else {
+        provider_accounts.iter().any(|a| a.already_linked)
+    };
 
     let handle_save = move |_| async move {
         mapping_error.set(None);
         let sels = selections();
 
         if let Some(source_bank_account_id) = source_bank_account_id {
-            if sels.len() != 1 {
-                mapping_error.set(Some("Choose a bank that returns exactly one account when connecting an existing manual account.".to_string()));
-                return;
-            }
+            let uid = match selected_uid() {
+                Some(uid) => uid,
+                None => {
+                    mapping_error.set(Some("Please select a bank account to link.".to_string()));
+                    return;
+                }
+            };
 
-            let (uid, name, iban, currency, _) = &sels[0];
+            let entry = sels.into_iter().find(|s| s.0 == uid);
+            let (_, name, iban, currency, _, _) = match entry {
+                Some(e) => e,
+                None => {
+                    mapping_error.set(Some("Selected bank account not found.".to_string()));
+                    return;
+                }
+            };
+
             match link_existing_bank_account(
                 connection_id,
                 source_bank_account_id,
-                uid.clone(),
-                name.clone(),
-                iban.clone(),
-                currency.clone(),
+                uid,
+                name,
+                iban,
+                currency,
             )
             .await
             {
@@ -906,7 +931,11 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
             return;
         }
 
-        for (uid, name, iban, currency, internal_id_str) in &sels {
+        for (uid, name, iban, currency, internal_id_str, already_linked) in &sels {
+            if *already_linked {
+                continue;
+            }
+
             let internal_id = if internal_id_str.is_empty() {
                 None
             } else {
@@ -964,6 +993,12 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
                     div { class: "message message-error", "{err}" }
                 }
 
+                if has_linked {
+                    div { class: "message message-warning",
+                        "Some bank accounts are already linked to another account and will be skipped when saving."
+                    }
+                }
+
                 if provider_accounts.is_empty() {
                     div { class: "message message-info",
                         "No accounts were returned by the bank. Please try reconnecting."
@@ -973,19 +1008,36 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
                         div { class: "stack-lg",
                             for (i , account) in provider_accounts.iter().enumerate() {
                                 div { class: "glass-card",
-                                    div { class: "form-grid two-up",
+                                    div {
+                                        class: if source_bank_account_id.is_some() { "form-grid" } else { "form-grid two-up" },
+                                        style: "padding: 1rem",
                                         div { class: "field-block",
-                                            label { class: "field-label", "Bank account" }
-                                            div { class: "stack-sm",
-                                                span { class: "label-strong",
-                                                    {account.name.as_deref().unwrap_or("Unnamed")}
-                                                }
-                                                if let Some(iban) = account.iban.as_deref() {
-                                                    span { class: "tiny-text mono muted",
-                                                        "{iban}"
+                                            div { class: "flex-row gap-sm align-center",
+                                                div { class: "stack-sm",
+                                                    span { class: "label-strong",
+                                                        if source_bank_account_id.is_some() {
+                                                            input {
+                                                                r#type: "radio",
+                                                                name: "provider-account",
+                                                                value: "{account.uid}",
+                                                                checked: selected_uid() == Some(account.uid.clone()),
+                                                                oninput: move |e| selected_uid.set(Some(e.value())),
+                                                            }
+                                                        }
+                                                        {account.name.as_deref().unwrap_or("Unnamed")}
+                                                        if account.already_linked {
+                                                            span { class: "chip chip-warning", "Already linked" }
+                                                        }
+                                                    }
+                                                    if let Some(iban) = account.iban.as_deref() {
+                                                        span { class: "tiny-text mono muted",
+                                                            "{iban}"
+                                                        }
+                                                    }
+                                                    span { class: "tiny-text muted",
+                                                        "{account.currency}"
                                                     }
                                                 }
-                                                span { class: "tiny-text muted", "{account.currency}" }
                                             }
                                         }
                                         if source_bank_account_id.is_none() {
@@ -1078,9 +1130,31 @@ async fn get_provider_accounts_for_connection(
             .map_err(|e| ServerFnError::new(e.to_string()))?
             .unwrap_or_default();
 
+        // Determine which provider UIDs are already linked on other connections.
+        let uids: Vec<String> = accounts.iter().map(|a| a.uid.clone()).collect();
+        let linked_uids = if uids.is_empty() {
+            Vec::new()
+        } else {
+            sqlx::query_scalar!(
+                r#"SELECT DISTINCT provider_account_uid FROM bank_accounts
+                   WHERE user_id = $1 AND provider_account_uid = ANY($2)
+                   AND bank_connection_id IS DISTINCT FROM $3"#,
+                user_id,
+                &uids,
+                connection_id
+            )
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+        };
+
         return Ok(accounts
             .into_iter()
             .map(|account| ProviderBankAccountInfo {
+                already_linked: linked_uids.contains(&account.uid),
                 uid: account.uid,
                 name: account.name,
                 iban: account.iban,
