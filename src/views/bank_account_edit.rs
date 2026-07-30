@@ -119,7 +119,10 @@ pub fn BankAccountEdit(id: Uuid) -> Element {
     let mut iban = use_signal(|| account.iban.clone().unwrap_or_default());
     let mut currency = use_signal(|| account.currency.clone());
     let mut internal_account_id = use_signal(|| {
-        account.internal_account_id.map(|id| id.to_string()).unwrap_or_default()
+        account
+            .internal_account_id
+            .map(|id| id.to_string())
+            .unwrap_or_default()
     });
     let mut form_error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);

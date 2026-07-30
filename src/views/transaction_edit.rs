@@ -296,8 +296,8 @@ pub fn EditTransaction(id: Uuid) -> Element {
     let mut form_error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
     let pending_bank_txns_resource = use_resource(move || async move {
-        let date = chrono::NaiveDate::parse_from_str(&txn_date(), "%Y-%m-%d")
-            .unwrap_or(transaction.date);
+        let date =
+            chrono::NaiveDate::parse_from_str(&txn_date(), "%Y-%m-%d").unwrap_or(transaction.date);
         list_pending_bank_transaction_prefills(date.to_string()).await
     });
 

@@ -1,8 +1,8 @@
 use crate::{
     components::button::Button,
     models::bank_sync::{
-        BankAccountBalanceComparison, BankAccountSummary, BankTransaction,
-        BankTransactionOverview, SyncResult,
+        BankAccountBalanceComparison, BankAccountSummary, BankTransaction, BankTransactionOverview,
+        SyncResult,
     },
 };
 use dioxus::prelude::*;
@@ -500,9 +500,8 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
         }
     };
 
-    let all_txns: Vec<BankTransactionOverview> = txns_resource()
-        .and_then(Result::ok)
-        .unwrap_or_default();
+    let all_txns: Vec<BankTransactionOverview> =
+        txns_resource().and_then(Result::ok).unwrap_or_default();
 
     let filter = status_filter();
     let filtered_txns: Vec<_> = all_txns
@@ -511,8 +510,8 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
         .cloned()
         .collect();
 
-    let pending_count  = all_txns.iter().filter(|t| t.status == "pending").count();
-    let linked_count   = all_txns.iter().filter(|t| t.status == "linked").count();
+    let pending_count = all_txns.iter().filter(|t| t.status == "pending").count();
+    let linked_count = all_txns.iter().filter(|t| t.status == "linked").count();
     let dismissed_count = all_txns.iter().filter(|t| t.status == "dismissed").count();
 
     let account_name = account.display_name().to_string();
@@ -544,13 +543,17 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                     div { class: "actions-row",
                         Link {
                             class: "btn btn-secondary",
-                            to: crate::Route::BankAccountEdit { id },
+                            to: crate::Route::BankAccountEdit {
+                                id,
+                            },
                             "Edit"
                         }
                         if is_manual {
                             Link {
                                 class: "btn btn-secondary",
-                                to: crate::Route::BankConnect { source_id: Some(id) },
+                                to: crate::Route::BankConnect {
+                                    source_id: Some(id),
+                                },
                                 "Connect to bank"
                             }
                         } else {
@@ -558,14 +561,22 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                 class: "btn btn-secondary".to_string(),
                                 disabled: syncing(),
                                 onclick: handle_sync,
-                                if syncing() { "Syncing..." } else { "Sync now" }
+                                if syncing() {
+                                    "Syncing..."
+                                } else {
+                                    "Sync now"
+                                }
                             }
                             if confirm_disconnect() {
                                 Button {
                                     class: "btn btn-danger".to_string(),
                                     disabled: disconnecting(),
                                     onclick: handle_disconnect,
-                                    if disconnecting() { "Disconnecting..." } else { "Confirm disconnect" }
+                                    if disconnecting() {
+                                        "Disconnecting..."
+                                    } else {
+                                        "Confirm disconnect"
+                                    }
                                 }
                                 Button {
                                     class: "btn btn-secondary".to_string(),
@@ -628,7 +639,11 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                         "{diff}"
                                     }
                                     p { class: "tiny-text muted",
-                                        if diff == Decimal::ZERO { "Balanced" } else { "Bank vs. ledger mismatch" }
+                                        if diff == Decimal::ZERO {
+                                            "Balanced"
+                                        } else {
+                                            "Bank vs. ledger mismatch"
+                                        }
                                     }
                                 } else {
                                     p { class: "metric-value muted", "-" }
@@ -664,14 +679,22 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                     div { class: "empty-state",
                         div { class: "empty-icon", "+" }
                         h3 { class: "section-title",
-                            if filter == "pending" { "No pending transactions" }
-                            else if filter == "linked" { "No linked transactions" }
-                            else { "No dismissed transactions" }
+                            if filter == "pending" {
+                                "No pending transactions"
+                            } else if filter == "linked" {
+                                "No linked transactions"
+                            } else {
+                                "No dismissed transactions"
+                            }
                         }
                         p { class: "supporting-text",
-                            if filter == "pending" { "All imported transactions have been posted or dismissed." }
-                            else if filter == "linked" { "No bank transactions have been linked to journal entries yet." }
-                            else { "No transactions have been dismissed." }
+                            if filter == "pending" {
+                                "All imported transactions have been posted or dismissed."
+                            } else if filter == "linked" {
+                                "No bank transactions have been linked to journal entries yet."
+                            } else {
+                                "No transactions have been dismissed."
+                            }
                         }
                     }
                 } else {
@@ -692,7 +715,9 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                         div { class: "stack-sm",
                                             span { class: "label-strong", "{txn.description}" }
                                             if let Some(ref r) = txn.reference {
-                                                span { class: "tiny-text mono muted", "{r}" }
+                                                span { class: "tiny-text mono muted",
+                                                    "{r}"
+                                                }
                                             }
                                         }
                                     }
@@ -706,11 +731,15 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                             if txn.status == "pending" {
                                                 Link {
                                                     class: "btn btn-primary btn-sm",
-                                                    to: crate::Route::NewTransactionFromBank { bank_txn_id: txn.id },
+                                                    to: crate::Route::NewTransactionFromBank {
+                                                        bank_txn_id: txn.id,
+                                                    },
                                                     "Post"
                                                 }
                                                 if confirm_dismiss() == Some(txn.id) {
-                                                    span { class: "tiny-text muted", "Dismiss?" }
+                                                    span { class: "tiny-text muted",
+                                                        "Dismiss?"
+                                                    }
                                                     Button {
                                                         class: "btn btn-danger btn-sm".to_string(),
                                                         disabled: dismissing() == Some(txn.id),
@@ -733,7 +762,9 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                                 if let Some(txn_id) = txn.linked_transaction_id {
                                                     Link {
                                                         class: "btn btn-secondary btn-sm",
-                                                        to: crate::Route::EditTransaction { id: txn_id },
+                                                        to: crate::Route::EditTransaction {
+                                                            id: txn_id,
+                                                        },
                                                         "View journal entry"
                                                     }
                                                 }
@@ -742,7 +773,11 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                                     class: "btn btn-secondary btn-sm".to_string(),
                                                     disabled: restoring() == Some(txn.id),
                                                     onclick: move |_| handle_restore(txn.id),
-                                                    if restoring() == Some(txn.id) { "Restoring..." } else { "Restore" }
+                                                    if restoring() == Some(txn.id) {
+                                                        "Restoring..."
+                                                    } else {
+                                                        "Restore"
+                                                    }
                                                 }
                                             }
                                         }
@@ -756,4 +791,3 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
         }
     }
 }
-

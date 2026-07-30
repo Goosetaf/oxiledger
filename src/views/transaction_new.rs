@@ -101,7 +101,8 @@ pub(crate) async fn validate_linked_bank_transactions(
         }
 
         let is_available = row.status == "pending"
-            || current_transaction_id.is_some_and(|txn_id| row.existing_transaction_id == Some(txn_id));
+            || current_transaction_id
+                .is_some_and(|txn_id| row.existing_transaction_id == Some(txn_id));
 
         if !is_available {
             return Err(ServerFnError::new(
@@ -135,7 +136,8 @@ pub(crate) fn entry_rows_to_inputs(rows: &[EntryRow]) -> Vec<JournalEntryInput> 
 
 fn pending_bank_transactions_for_date(
     date_text: &str,
-) -> impl std::future::Future<Output = Result<Vec<BankTransactionPrefill>, ServerFnError>> + 'static {
+) -> impl std::future::Future<Output = Result<Vec<BankTransactionPrefill>, ServerFnError>> + 'static
+{
     let date_text = date_text.to_string();
     async move { list_pending_bank_transaction_prefills(date_text).await }
 }
@@ -406,7 +408,8 @@ pub fn NewTransaction() -> Element {
     let entry_rows: Signal<Vec<EntryRow>> = use_signal(|| vec![EntryRow::new(), EntryRow::new()]);
     let mut form_error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
-    let pending_bank_txns_resource = use_resource(move || pending_bank_transactions_for_date(&txn_date()));
+    let pending_bank_txns_resource =
+        use_resource(move || pending_bank_transactions_for_date(&txn_date()));
 
     let handle_submit = move |e: Event<FormData>| {
         e.prevent_default();
@@ -445,7 +448,8 @@ pub fn NewTransaction() -> Element {
     rsx! {
         TransactionForm {
             heading: "New transaction".to_string(),
-            subtitle: "Build a balanced entry with two or more lines before saving. Only same-date bank transactions can be linked together.".to_string(),
+            subtitle: "Build a balanced entry with two or more lines before saving. Only same-date bank transactions can be linked together."
+                .to_string(),
             submit_label: "Save transaction".to_string(),
             submitting_label: "Saving transaction...".to_string(),
             accounts,
@@ -503,7 +507,10 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
     };
 
     let locked_row = EntryRow {
-        account_id_str: prefill.internal_account_id.map(|id| id.to_string()).unwrap_or_default(),
+        account_id_str: prefill
+            .internal_account_id
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
         memo: prefill.description.clone(),
         debit_amount_str: debit_str,
         credit_amount_str: credit_str,
@@ -516,7 +523,8 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
     let mut entry_rows: Signal<Vec<EntryRow>> = use_signal(|| vec![locked_row, EntryRow::new()]);
     let mut form_error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
-    let pending_bank_txns_resource = use_resource(move || pending_bank_transactions_for_date(&txn_date()));
+    let pending_bank_txns_resource =
+        use_resource(move || pending_bank_transactions_for_date(&txn_date()));
     let transfer_suggestions_resource = use_resource(move || suggest_transfer_matches(bank_txn_id));
     let source_account_name = prefill.internal_account_name.clone().unwrap_or_default();
     let selected_bank_txn_ids: Vec<Uuid> = entry_rows()
@@ -571,8 +579,7 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
                     div { class: "actions-row",
                         div { class: "stack-sm",
                             strong { "Possible internal transfer" }
-                        span {
-                                class: "supporting-text",
+                            span { class: "supporting-text",
                                 "Match {suggestion.internal_account_name.as_deref().unwrap_or(\"Unknown account\")} {suggestion.amount} {suggestion.currency} on {suggestion.date}"
                             }
                         }
@@ -582,38 +589,55 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
                                 let source_account_name = source_account_name.clone();
                                 let suggestion = suggestion.clone();
                                 move |_| {
-                                    let (debit_amount_str, credit_amount_str) =
-                                        if suggestion.amount >= rust_decimal::Decimal::ZERO {
-                                            (suggestion.amount.abs().to_string(), String::new())
-                                        } else {
-                                            (String::new(), suggestion.amount.abs().to_string())
-                                        };
+                                    let (debit_amount_str, credit_amount_str) = if suggestion.amount
+                                        >= rust_decimal::Decimal::ZERO
+                                    {
+                                        (suggestion.amount.abs().to_string(), String::new())
+                                    } else {
+                                        (String::new(), suggestion.amount.abs().to_string())
+                                    };
                                     let mut rows = entry_rows.write();
-                                    if let Some(blank_row) = rows.iter_mut().find(|row| {
-                                        !row.is_locked()
-                                            && row.account_id_str.is_empty()
-                                            && row.memo.trim().is_empty()
-                                            && row.debit_amount_str.trim().is_empty()
-                                            && row.credit_amount_str.trim().is_empty()
-                                    }) {
-                                        blank_row.account_id_str = suggestion.internal_account_id.map(|id| id.to_string()).unwrap_or_default();
+                                    if let Some(blank_row) = rows
+                                        .iter_mut()
+                                        .find(|row| {
+                                            !row.is_locked() && row.account_id_str.is_empty()
+                                                && row.memo.trim().is_empty()
+                                                && row.debit_amount_str.trim().is_empty()
+                                                && row.credit_amount_str.trim().is_empty()
+                                        })
+                                    {
+                                        blank_row.account_id_str = suggestion
+                                            .internal_account_id
+                                            .map(|id| id.to_string())
+                                            .unwrap_or_default();
                                         blank_row.memo = suggestion.description.clone();
                                         blank_row.debit_amount_str = debit_amount_str;
                                         blank_row.credit_amount_str = credit_amount_str;
-                                        blank_row.locked_bank_transaction_id = Some(suggestion.bank_transaction_id);
+                                        blank_row.locked_bank_transaction_id = Some(
+                                            suggestion.bank_transaction_id,
+                                        );
                                     } else {
                                         rows.push(EntryRow {
-                                            account_id_str: suggestion.internal_account_id.map(|id| id.to_string()).unwrap_or_default(),
+                                            account_id_str: suggestion
+                                                .internal_account_id
+                                                .map(|id| id.to_string())
+                                                .unwrap_or_default(),
                                             memo: suggestion.description.clone(),
                                             debit_amount_str,
                                             credit_amount_str,
                                             locked_bank_transaction_id: Some(suggestion.bank_transaction_id),
                                         });
                                     }
-                                    txn_desc.set(transfer_description(
-                                        &source_account_name,
-                                        suggestion.internal_account_name.as_deref().unwrap_or("Unknown account"),
-                                    ));
+                                    txn_desc
+                                        .set(
+                                            transfer_description(
+                                                &source_account_name,
+                                                suggestion
+                                                    .internal_account_name
+                                                    .as_deref()
+                                                    .unwrap_or("Unknown account"),
+                                            ),
+                                        );
                                 }
                             },
                             "Match as transfer"
@@ -624,7 +648,8 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
 
             TransactionForm {
                 heading: "New transaction from bank".to_string(),
-                subtitle: "The highlighted row is linked to a bank transaction and is read-only. Only same-date bank transactions can be linked together.".to_string(),
+                subtitle: "The highlighted row is linked to a bank transaction and is read-only. Only same-date bank transactions can be linked together."
+                    .to_string(),
                 submit_label: "Save transaction".to_string(),
                 submitting_label: "Saving transaction...".to_string(),
                 accounts,

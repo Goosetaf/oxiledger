@@ -368,20 +368,21 @@ pub fn TransactionForm(
                                                                 let Some(selected) = available_bank_txns
                                                                     .iter()
                                                                     .find(|txn| txn.bank_transaction_id == bank_txn_id)
-                                                                    .cloned()
-                                                                else {
+
+
+                                                                    .cloned() else {
                                                                     return;
                                                                 };
-
-                                                                let (debit_amount_str, credit_amount_str) =
-                                                                    if selected.amount >= Decimal::ZERO {
-                                                                        (selected.amount.abs().to_string(), String::new())
-                                                                    } else {
-                                                                        (String::new(), selected.amount.abs().to_string())
-                                                                    };
-
+                                                                let (debit_amount_str, credit_amount_str) = if selected.amount >= Decimal::ZERO {
+                                                                    (selected.amount.abs().to_string(), String::new())
+                                                                } else {
+                                                                    (String::new(), selected.amount.abs().to_string())
+                                                                };
                                                                 let mut rows = entry_rows.write();
-                                                                rows[index].account_id_str = selected.internal_account_id.map(|id| id.to_string()).unwrap_or_default();
+                                                                rows[index].account_id_str = selected
+                                                                    .internal_account_id
+                                                                    .map(|id| id.to_string())
+                                                                    .unwrap_or_default();
                                                                 if rows[index].memo.trim().is_empty() {
                                                                     rows[index].memo = selected.description;
                                                                 }
@@ -389,16 +390,9 @@ pub fn TransactionForm(
                                                                 rows[index].credit_amount_str = credit_amount_str;
                                                                 rows[index].locked_bank_transaction_id = Some(selected.bank_transaction_id);
                                                             },
-                                                            option {
-                                                                value: "",
-                                                                selected: true,
-                                                                "Link bank transaction"
-                                                            }
+                                                            option { value: "", selected: true, "Link bank transaction" }
                                                             for txn in options {
-                                                                option {
-                                                                    value: "{txn.bank_transaction_id}",
-                                                                    "{txn.amount} {txn.currency} - {txn.description}"
-                                                                }
+                                                                option { value: "{txn.bank_transaction_id}", "{txn.amount} {txn.currency} - {txn.description}" }
                                                             }
                                                         }
                                                     }
