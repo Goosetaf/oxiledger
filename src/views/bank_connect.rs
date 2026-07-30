@@ -1054,7 +1054,9 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
                                                         }
                                                         {account.name.as_deref().unwrap_or("Unnamed")}
                                                         if account.already_linked {
-                                                            span { class: "chip chip-warning", "Already linked" }
+                                                            span { class: "chip chip-warning",
+                                                                "Already linked"
+                                                            }
                                                         }
                                                     }
                                                     if let Some(iban) = account.iban.as_deref() {

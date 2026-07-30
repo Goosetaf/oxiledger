@@ -291,6 +291,52 @@ pub async fn restore_bank_transaction(id: Uuid) -> Result<(), ServerFnError> {
     Ok(())
 }
 
+#[post("/api/bank-accounts/:id/transactions")]
+pub async fn create_manual_bank_transaction(
+    id: Uuid,
+    date: chrono::NaiveDate,
+    description: String,
+    amount: rust_decimal::Decimal,
+    reference: Option<String>,
+) -> Result<(), ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use crate::server::auth::{extract_context, require_auth};
+
+        let (pool, cookies) = extract_context().await?;
+        let user_id = require_auth(&pool, &cookies).await?;
+
+        let _account = sqlx::query_scalar!(
+            "SELECT id FROM bank_accounts WHERE id = $1 AND user_id = $2",
+            id,
+            user_id
+        )
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?
+        .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
+
+        sqlx::query!(
+            r#"INSERT INTO bank_transactions
+               (bank_account_id, user_id, external_id, date, amount, currency, description, reference, status, imported_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW())"#,
+            id,
+            user_id,
+            format!("manual-{}", Uuid::new_v4()),
+            date,
+            amount,
+            "EUR",
+            description,
+            reference,
+        )
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    }
+
+    Ok(())
+}
+
 #[post("/api/bank-transactions/:id/dismiss")]
 pub async fn dismiss_bank_transaction(id: Uuid) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
@@ -419,6 +465,13 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
     let mut restoring = use_signal(|| None::<Uuid>);
     let mut disconnecting = use_signal(|| false);
     let mut confirm_disconnect = use_signal(|| false);
+    let mut show_add_form = use_signal(|| false);
+    let mut new_date = use_signal(|| chrono::Local::now().naive_local().date());
+    let mut new_description = use_signal(String::new);
+    let mut new_amount = use_signal(String::new);
+    let mut new_reference = use_signal(String::new);
+    let mut adding_txn = use_signal(|| false);
+    let mut add_txn_error = use_signal(|| None::<String>);
 
     let account = match account_resource() {
         Some(Ok(a)) => a,
@@ -498,6 +551,45 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                 confirm_disconnect.set(false);
             }
         }
+    };
+
+    let handle_add_txn = move |_| async move {
+        add_txn_error.set(None);
+        let desc = new_description();
+        let desc = desc.trim().to_string();
+        if desc.is_empty() {
+            add_txn_error.set(Some("Description is required.".to_string()));
+            return;
+        }
+        let amount_str = new_amount();
+        let amount: rust_decimal::Decimal = match amount_str.trim().parse() {
+            Ok(v) => v,
+            Err(_) => {
+                add_txn_error.set(Some("Invalid amount.".to_string()));
+                return;
+            }
+        };
+        adding_txn.set(true);
+        match create_manual_bank_transaction(
+            id,
+            new_date(),
+            desc,
+            amount,
+            Some(new_reference()).filter(|r| !r.trim().is_empty()).map(|r| r.trim().to_string()),
+        )
+        .await
+        {
+            Ok(_) => {
+                show_add_form.set(false);
+                new_description.set(String::new());
+                new_amount.set(String::new());
+                new_reference.set(String::new());
+                new_date.set(chrono::Local::now().naive_local().date());
+                txns_resource.restart();
+            }
+            Err(err) => add_txn_error.set(Some(err.to_string())),
+        }
+        adding_txn.set(false);
     };
 
     let all_txns: Vec<BankTransactionOverview> =
@@ -651,6 +743,108 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                             }
                         }
                     },
+                }
+
+                // Manual transaction form.
+                if is_manual {
+                    div { class: "actions-row",
+                        Button {
+                            class: "btn btn-primary btn-sm".to_string(),
+                            onclick: move |_| {
+                                let next = !show_add_form();
+                                show_add_form.set(next);
+                            },
+                            if show_add_form() {
+                                "Cancel"
+                            } else {
+                                "Add transaction"
+                            }
+                        }
+                    }
+                    if show_add_form() {
+                        div { class: "glass-card", style: "padding: 1rem;",
+                            div { class: "form-grid two-up",
+                                div { class: "field-block",
+                                    label {
+                                        class: "field-label",
+                                        r#for: "new-txn-date",
+                                        "Date"
+                                    }
+                                    input {
+                                        id: "new-txn-date",
+                                        r#type: "date",
+                                        class: "input",
+                                        value: new_date().format("%Y-%m-%d").to_string(),
+                                        oninput: move |e| {
+                                            if let Ok(d) = e.value().parse::<chrono::NaiveDate>() {
+                                                new_date.set(d);
+                                            }
+                                        },
+                                    }
+                                }
+                                div { class: "field-block",
+                                    label {
+                                        class: "field-label",
+                                        r#for: "new-txn-amount",
+                                        "Amount"
+                                    }
+                                    input {
+                                        id: "new-txn-amount",
+                                        class: "input",
+                                        r#type: "text",
+                                        placeholder: "e.g. 150.00 or -50.00",
+                                        value: new_amount,
+                                        oninput: move |e| new_amount.set(e.value()),
+                                    }
+                                }
+                                div { class: "field-block",
+                                    label {
+                                        class: "field-label",
+                                        r#for: "new-txn-desc",
+                                        "Description"
+                                    }
+                                    input {
+                                        id: "new-txn-desc",
+                                        class: "input",
+                                        r#type: "text",
+                                        placeholder: "e.g. Office supplies",
+                                        value: new_description,
+                                        oninput: move |e| new_description.set(e.value()),
+                                    }
+                                }
+                                div { class: "field-block",
+                                    label {
+                                        class: "field-label",
+                                        r#for: "new-txn-ref",
+                                        "Reference (optional)"
+                                    }
+                                    input {
+                                        id: "new-txn-ref",
+                                        class: "input",
+                                        r#type: "text",
+                                        placeholder: "e.g. INV-001",
+                                        value: new_reference,
+                                        oninput: move |e| new_reference.set(e.value()),
+                                    }
+                                }
+                            }
+                            if let Some(err) = add_txn_error() {
+                                div { class: "message message-error", "{err}" }
+                            }
+                            div { class: "actions-row",
+                                Button {
+                                    class: "btn btn-primary".to_string(),
+                                    disabled: adding_txn(),
+                                    onclick: handle_add_txn,
+                                    if adding_txn() {
+                                        "Adding..."
+                                    } else {
+                                        "Save transaction"
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Filter tabs.
