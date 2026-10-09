@@ -6,4 +6,9 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: oxiledger
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d oxiledger"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

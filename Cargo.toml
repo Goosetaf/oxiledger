@@ -35,4 +35,6 @@ default = ["web"]
 web     = ["dioxus/web", "dep:web-sys"]
 desktop = ["dioxus/desktop"]
 mobile  = ["dioxus/mobile"]
+# Development only: adds the `seed` subcommand that fills the database with test data.
+seed    = ["server"]
 server  = ["dioxus/server", "dep:sqlx", "dep:argon2", "dep:axum", "dep:dioxus-server", "dep:dotenvy", "dep:tower-cookies", "dep:tokio", "dep:tokio-cron-scheduler", "dep:openidconnect", "dep:reqwest", "reqwest/rustls-tls", "dep:jsonwebtoken", "dep:urlencoding"]
