@@ -137,7 +137,6 @@ pub fn Navbar() -> Element {
 
     // A `Callback` is `Copy`, so the sidebar and the mobile top bar can share it.
     let handle_logout = use_callback(move |_: MouseEvent| {
-        let nav = nav.clone();
         spawn(async move {
             let _ = logout_action().await;
             nav.push(crate::Route::Login {});
