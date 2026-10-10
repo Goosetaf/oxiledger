@@ -90,6 +90,12 @@ fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
+        // `viewport-fit=cover` exposes the safe-area insets the mobile tab bar pads against.
+        document::Meta {
+            name: "viewport",
+            content: "width=device-width, initial-scale=1, viewport-fit=cover",
+        }
+        document::Meta { name: "theme-color", content: "#090b0e" }
         Router::<Route> {}
     }
 }

@@ -129,7 +129,7 @@ pub fn Accounts() -> Element {
                 div { class: "section-header",
                     div {
                         h1 { class: "section-title", "Accounts" }
-                        p { class: "section-subtitle",
+                        p { class: "section-subtitle hide-on-mobile",
                             "Manage your ledger accounts and their statuses."
                         }
                     }
@@ -140,7 +140,7 @@ pub fn Accounts() -> Element {
                     }
                 }
 
-                div { class: "metric-grid",
+                div { class: "metric-grid hide-on-mobile",
                     article { class: "metric-card",
                         p { class: "metric-label", "Total accounts" }
                         p { class: "metric-value", "{total_accounts}" }
@@ -168,7 +168,7 @@ pub fn Accounts() -> Element {
                         }
                     }
                 } else {
-                    table { class: "glass-card data-table",
+                    table { class: "glass-card data-table stack-rows",
                         thead {
                             tr {
                                 th { "Code" }
@@ -181,21 +181,27 @@ pub fn Accounts() -> Element {
                         }
                         tbody {
                             for account in accounts {
-                                tr {
-                                    td { class: "mono muted",
+                                // On phones the row is a toggle: its actions stay folded
+                                // away until the row is tapped (see `.row-expandable`).
+                                tr { class: "row-expandable",
+                                    td { class: "mono muted m-lead",
                                         {account.code.as_deref().unwrap_or("-")}
                                     }
-                                    td {
+                                    td { class: "m-title",
                                         div { class: "stack-sm",
-                                            span { class: "label-strong", "{account.name}" }
+                                            label {
+                                                class: "label-strong row-toggle-label",
+                                                r#for: format!("account-{}-toggle", account.id),
+                                                "{account.name}"
+                                            }
                                             if let Some(description) = account.description.clone() {
                                                 span { class: "tiny-text", "{description}" }
                                             }
                                         }
                                     }
-                                    td { class: "muted", "{account.account_type}" }
-                                    td { class: "muted", "{account.normal_balance}" }
-                                    td {
+                                    td { class: "muted m-meta", "{account.account_type}" }
+                                    td { class: "muted m-hide", "{account.normal_balance}" }
+                                    td { class: "m-value",
                                         span { class: if account.is_active { "chip chip-positive" } else { "chip chip-warning" },
                                             if account.is_active {
                                                 "Active"
@@ -203,8 +209,15 @@ pub fn Accounts() -> Element {
                                                 "Inactive"
                                             }
                                         }
+                                        input {
+                                            id: format!("account-{}-toggle", account.id),
+                                            class: "row-toggle",
+                                            r#type: "checkbox",
+                                            r#autocomplete: "off",
+                                            hidden: true,
+                                        }
                                     }
-                                    td { class: "col-right",
+                                    td { class: "col-right m-actions",
                                         div { class: "actions-row justify-end",
                                             Link {
                                                 class: "btn btn-secondary btn-sm",

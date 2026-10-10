@@ -80,7 +80,7 @@ pub fn Dashboard() -> Element {
                 div { class: "section-header",
                     div {
                         h1 { class: "section-title", "Dashboard" }
-                        p { class: "section-subtitle",
+                        p { class: "section-subtitle hide-on-mobile",
                             "Overview of your account balances and metrics."
                         }
                     }
@@ -122,7 +122,7 @@ pub fn Dashboard() -> Element {
                             }
                         }
                     } else {
-                        table { class: "glass-card data-table",
+                        table { class: "glass-card data-table stack-rows",
                             thead {
                                 tr {
                                     th { "Code" }
@@ -133,15 +133,15 @@ pub fn Dashboard() -> Element {
                             tbody {
                                 for balance in balances {
                                     tr {
-                                        td { class: "mono muted",
+                                        td { class: "mono muted m-lead",
                                             {balance.account_code.as_deref().unwrap_or("-")}
                                         }
-                                        td {
+                                        td { class: "m-title",
                                             div { class: "stack-sm",
                                                 span { class: "label-strong", "{balance.account_name}" }
                                             }
                                         }
-                                        td { class: "col-right mono",
+                                        td { class: "col-right mono m-value",
                                             span { class: if balance.balance >= Decimal::ZERO { "text-positive" } else { "text-negative" },
                                                 "{balance.balance}"
                                             }

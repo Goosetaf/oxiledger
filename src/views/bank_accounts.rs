@@ -163,7 +163,7 @@ pub fn BankAccounts() -> Element {
                 div { class: "section-header",
                     div {
                         h1 { class: "section-title", "Bank Accounts" }
-                        p { class: "section-subtitle",
+                        p { class: "section-subtitle hide-on-mobile",
                             "Connected bank accounts and their sync status."
                         }
                     }
@@ -192,7 +192,7 @@ pub fn BankAccounts() -> Element {
                         }
                     }
                 } else {
-                    table { class: "glass-card data-table",
+                    table { class: "glass-card data-table stack-rows",
                         thead {
                             tr {
                                 th { "Bank" }
@@ -206,7 +206,8 @@ pub fn BankAccounts() -> Element {
                         tbody {
                             for account in accounts {
                                 tr {
-                                    td {
+                                    // The status cell already says "Manual", so skip this one on phones.
+                                    td { class: if account.is_manual { "m-hide" } else { "m-meta m-block" },
                                         div { class: "stack-sm",
                                             if account.is_manual {
                                                 span { class: "chip chip-neutral", "Manual" }
@@ -222,7 +223,7 @@ pub fn BankAccounts() -> Element {
                                             }
                                         }
                                     }
-                                    td {
+                                    td { class: "m-title",
                                         div { class: "stack-sm",
                                             span { class: "label-strong", {account.display_name()} }
                                             if let Some(iban) = account.iban.as_deref() {
@@ -233,10 +234,14 @@ pub fn BankAccounts() -> Element {
                                             span { class: "tiny-text muted", "{account.currency}" }
                                         }
                                     }
-                                    td { class: "muted",
+                                    td {
+                                        class: "muted m-meta m-block",
+                                        "data-label": "Linked to",
                                         {account.internal_account_name.as_deref().unwrap_or("—")}
                                     }
-                                    td { class: "muted",
+                                    td {
+                                        class: if account.is_manual { "muted m-hide" } else { "muted m-meta m-block" },
+                                        "data-label": "Last synced",
                                         if account.is_manual {
                                             "N/A"
                                         } else {
@@ -248,7 +253,7 @@ pub fn BankAccounts() -> Element {
                                             }
                                         }
                                     }
-                                    td {
+                                    td { class: "m-value",
                                         if account.is_manual {
                                             span { class: "chip chip-neutral", "Manual" }
                                         } else if account.is_expired() {
@@ -257,7 +262,7 @@ pub fn BankAccounts() -> Element {
                                             span { class: "chip chip-positive", "Active" }
                                         }
                                     }
-                                    td { class: "col-right",
+                                    td { class: "col-right m-actions",
                                         div { class: "actions-row justify-end",
                                             Link {
                                                 class: "btn btn-secondary btn-sm",
