@@ -222,6 +222,8 @@ table {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .nav-link {
@@ -1195,6 +1197,73 @@ table {
 
 
 /* ============================================================
+   CUSTOMIZE
+   ============================================================ */
+
+.icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.pref-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+}
+
+.pref-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 14px;
+}
+
+.pref-row + .pref-row {
+  border-top: 1px solid var(--line);
+}
+
+.pref-row > .icon,
+.pref-row.is-hidden .pref-label {
+  color: var(--text-muted);
+}
+
+.pref-label {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pref-label .tiny-text {
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.pref-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.pref-actions .btn:not(.btn-icon) {
+  padding-right: 10px;
+  padding-left: 10px;
+}
+
+.btn-icon {
+  width: 32px;
+  padding: 0;
+}
+
+.btn-icon .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* ============================================================
    SMALL SCREENS
    Phones are for checking balances and jotting down a transaction,
    so reading and the "new transaction" action come first; table
@@ -1204,8 +1273,21 @@ table {
 /* Phone-only shell pieces stay out of the desktop layout. */
 .tabbar,
 .topbar-brand,
-.topbar-account {
+.menu-backdrop {
   display: none;
+}
+
+@keyframes menu-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes menu-fade {
+  from {
+    opacity: 0;
+  }
 }
 
 @media (max-width: 900px) {
@@ -1230,13 +1312,81 @@ table {
     display: none;
   }
 
-  /* --- Shell: the sidebar becomes a bottom tab bar --- */
+  /* --- Shell: the sidebar becomes a bottom tab bar ---
+     The sidebar is not dropped: it is the sheet that the Menu tab opens, so
+     whatever it lists on a wide screen is one tap away on a phone too. */
 
   .sidebar {
     display: none;
   }
 
-  /* The top bar scrolls away with the page; it only holds the brand and sign-out. */
+  .menu-open .sidebar {
+    top: auto;
+    right: env(safe-area-inset-right, 0px);
+    bottom: calc(var(--tabbar-height) + var(--safe-bottom));
+    left: env(safe-area-inset-left, 0px);
+    z-index: 46;
+    display: flex;
+    width: auto;
+    height: auto;
+    max-height: 72vh;
+    max-height: min(72dvh, 34rem);
+    padding: 10px 0 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: #0f1216;
+    border: 1px solid var(--line-soft);
+    border-bottom: 0;
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -24px 60px rgba(0, 0, 0, 0.5);
+    outline: none;
+    animation: menu-rise 180ms ease-out;
+  }
+
+  .menu-open .sidebar-brand {
+    display: none;
+  }
+
+  .menu-open .sidebar-nav {
+    flex: none;
+    gap: 0;
+    overflow: visible;
+  }
+
+  .menu-open .nav-link {
+    min-height: 48px;
+    padding-top: 0;
+    padding-bottom: 0;
+    color: var(--text);
+    font-size: 1rem;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .menu-open .nav-link.is-active {
+    color: #fb923c;
+  }
+
+  .menu-open .sidebar-footer {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
+  .menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: block;
+    background: rgba(3, 4, 6, 0.6);
+    animation: menu-fade 180ms ease-out;
+  }
+
+  /* The page behind the open menu stays where it is. */
+  html:has(.app-shell.menu-open) {
+    overflow: hidden;
+  }
+
+  /* The top bar scrolls away with the page; it only holds the brand. */
   .topbar {
     position: static;
     height: auto;
@@ -1256,32 +1406,6 @@ table {
     display: inline;
   }
 
-  .topbar-account {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-  }
-
-  .topbar-user {
-    max-width: 38vw;
-    overflow: hidden;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .topbar-signout {
-    min-height: 44px;
-    padding: 0;
-    color: var(--text);
-    background: none;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
   .shell-inner {
     min-height: 0;
     padding-top: 8px;
@@ -1299,8 +1423,7 @@ table {
     bottom: 0;
     left: 0;
     z-index: 50;
-    display: grid;
-    grid-template-columns: 1fr 1fr auto 1fr 1fr;
+    display: flex;
     align-items: center;
     height: calc(var(--tabbar-height) + var(--safe-bottom));
     padding: 0 max(6px, env(safe-area-inset-right, 0px)) var(--safe-bottom) max(6px, env(safe-area-inset-left, 0px));
@@ -1310,18 +1433,29 @@ table {
     border-top: 1px solid var(--line);
   }
 
+  /* Shortcuts split evenly around "+", which keeps it centred however many there are. */
+  .tabbar-side {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
   .tab {
     position: relative;
     display: flex;
+    flex: 1 1 0;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 4px;
     min-width: 0;
     height: var(--tabbar-height);
+    padding: 0;
     color: var(--text-muted);
+    background: none;
     font-size: 0.6875rem;
     font-weight: 500;
+    cursor: pointer;
   }
 
   /* Same mark as the sidebar's active link, turned onto the bar's top edge. */
@@ -1340,7 +1474,7 @@ table {
     background: #f97316;
   }
 
-  .tab-icon {
+  .tab .icon {
     width: 22px;
     height: 22px;
   }
@@ -1369,14 +1503,13 @@ table {
     transform: scale(0.96);
   }
 
-  .tab-add .tab-icon {
+  .tab-add .icon {
     width: 24px;
     height: 24px;
   }
 
   .tab:focus-visible,
-  .tab-add:focus-visible,
-  .topbar-signout:focus-visible {
+  .tab-add:focus-visible {
     outline: 2px solid var(--primary);
     outline-offset: 2px;
   }
@@ -1434,6 +1567,20 @@ table {
     min-height: 38px;
     padding: 0 14px;
     font-size: 0.6875rem;
+  }
+
+  .btn-icon {
+    width: 38px;
+    padding: 0;
+  }
+
+  .pref-row {
+    gap: 10px;
+    padding: 10px 10px 10px 12px;
+  }
+
+  .pref-actions {
+    gap: 4px;
   }
 
   /* iOS gives date inputs an intrinsic width and centres the value. */
@@ -1844,6 +1991,18 @@ table {
   }
 }
 
+/* Narrow phones: Customize row actions drop under the name instead of crowding it. */
+@media (max-width: 359px) {
+  .pref-row {
+    flex-wrap: wrap;
+  }
+
+  .pref-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
+
 /* Very narrow phones: keep "Transactions" from truncating in the tab bar. */
 @media (max-width: 340px) {
   .tab {
@@ -1862,5 +2021,10 @@ table {
 
   .stack-rows > tbody > tr.row-expandable > .m-value::after {
     transition: none;
+  }
+
+  .menu-open .sidebar,
+  .menu-backdrop {
+    animation: none;
   }
 }

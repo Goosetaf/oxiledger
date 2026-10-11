@@ -1,3 +1,4 @@
+use crate::navigation::NavPreferences;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -22,4 +23,12 @@ pub struct RegisterRequest {
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
+}
+
+/// The signed-in user as the app shell needs them: who they are and how they
+/// have arranged the navigation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CurrentUser {
+    pub username: String,
+    pub navigation: NavPreferences,
 }

@@ -9,6 +9,7 @@ pub mod bank_account_edit;
 pub mod bank_account_new;
 pub mod bank_accounts;
 pub mod bank_connect;
+pub mod customize;
 pub mod dashboard;
 pub mod error;
 pub mod login;

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users\n             SET preferences = jsonb_set(preferences, '{navigation}', $1), updated_at = NOW()\n             WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9182768fb8b5eefcad6d0d4e010815b96aaa09cbaca44dbb684b1671f80c6d9a"
+}

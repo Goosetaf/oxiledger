@@ -5,6 +5,7 @@ use uuid::Uuid;
 mod bank_sync;
 mod components;
 mod models;
+mod navigation;
 #[cfg(feature = "server")]
 mod server;
 mod views;
@@ -19,6 +20,7 @@ use views::{
     bank_account_new::NewBankAccount,
     bank_accounts::BankAccounts,
     bank_connect::{BankAccountMap, BankConnect},
+    customize::Customize,
     dashboard::Dashboard,
     error::AppErrorPage,
     login::Login,
@@ -81,6 +83,8 @@ enum Route {
             BankConnect { source_id: Option<Uuid> },
             #[route("/bank-accounts/connect/map?:connection_id")]
             BankAccountMap { connection_id: Uuid },
+            #[route("/customize")]
+            Customize {},
         #[route("/:..segments")]
         NotFound { segments: Vec<String> },
 }
