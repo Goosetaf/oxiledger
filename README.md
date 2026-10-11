@@ -28,11 +28,12 @@ To get started, install Rust, dioxus-cli, and sqlx-cli.
 
 ## Test data
 
-`cargo seed` applies the migrations and fills the database with test data.
+`cargo seed` fills the database with test data. The database needs to be running and migrated first.
 
 ```bash
 cp .env.example .env
 docker compose up -d --wait
+sqlx migrate run
 cargo seed
 ```
 
@@ -42,7 +43,7 @@ Run `cargo seed` again to reset these users. Only run it against a development d
 
 Connecting a bank, syncing and signing in through OIDC need real provider credentials and are not covered.
 
-The seeder is a separate program in `seed/` and is not part of the app.
+The seeder is a separate program in `seed/`. It uses the app's types but is not part of the app or the Docker image.
 
 ## Serving
 

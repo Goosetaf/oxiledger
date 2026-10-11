@@ -1,2 +1,2 @@
 [alias]
-seed = "run --manifest-path seed/Cargo.toml"
+seed = "run --no-default-features --features server --example seed"

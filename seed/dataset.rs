@@ -13,8 +13,11 @@
 use std::collections::HashMap;
 
 use chrono::{Datelike, Days, Months, NaiveDate, TimeDelta};
+use oxiledger::{
+    bank_sync::provider::ProviderBankAccount,
+    models::{account::AccountType, bank_sync::BankTransactionStatus, transaction::EntryType},
+};
 use rust_decimal::Decimal;
-use serde::Serialize;
 
 /// Full months of history before the current month.
 const HISTORY_MONTHS: u32 = 5;
@@ -86,71 +89,6 @@ pub const MAPPING_CONNECTIONS: [(&str, &str); 3] = [
     (HANDELSBANKEN, "started from a manual bank account"),
     (DANSKE, "the bank returned no accounts"),
 ];
-
-/// The `account_type` enum in the database.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
-#[sqlx(type_name = "account_type")]
-pub enum AccountType {
-    Asset,
-    Liability,
-    Equity,
-    Revenue,
-    Expense,
-}
-
-impl AccountType {
-    /// The side that accounts of this type normally carry their balance on.
-    pub fn normal_balance(self) -> NormalBalance {
-        match self {
-            Self::Asset | Self::Expense => NormalBalance::Debit,
-            Self::Liability | Self::Equity | Self::Revenue => NormalBalance::Credit,
-        }
-    }
-}
-
-/// The `normal_balance` enum in the database.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
-#[sqlx(type_name = "normal_balance")]
-pub enum NormalBalance {
-    Debit,
-    Credit,
-}
-
-/// The `entry_type` enum in the database.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
-#[sqlx(type_name = "entry_type")]
-pub enum EntryType {
-    Debit,
-    Credit,
-}
-
-/// The values the app stores in `bank_transactions.status`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BankTransactionStatus {
-    Pending,
-    Linked,
-    Dismissed,
-}
-
-impl BankTransactionStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Linked => "linked",
-            Self::Dismissed => "dismissed",
-        }
-    }
-}
-
-/// An account as the bank reported it after authorization. The app reads these
-/// fields from `bank_connections.provider_accounts_json` on the mapping page.
-#[derive(Serialize)]
-pub struct ProviderBankAccount {
-    pub uid: String,
-    pub name: Option<String>,
-    pub iban: Option<String>,
-    pub currency: String,
-}
 
 pub struct LedgerAccount {
     pub key: &'static str,
@@ -1255,8 +1193,7 @@ mod tests {
             ] {
                 assert!(
                     data.bank_transaction_count(status) > 0,
-                    "{today}: no {} transactions",
-                    status.as_str()
+                    "{today}: no {status} transactions"
                 );
             }
             for account in &data.accounts {

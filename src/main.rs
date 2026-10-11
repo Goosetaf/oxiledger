@@ -1,13 +1,12 @@
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-#[cfg(feature = "server")]
-mod bank_sync;
 mod components;
-mod models;
-#[cfg(feature = "server")]
-mod server;
 mod views;
+
+use oxiledger::models;
+#[cfg(feature = "server")]
+use oxiledger::{bank_sync, server};
 
 use components::nav::Navbar;
 use views::{

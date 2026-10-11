@@ -36,3 +36,9 @@ web     = ["dioxus/web", "dep:web-sys"]
 desktop = ["dioxus/desktop"]
 mobile  = ["dioxus/mobile"]
 server  = ["dioxus/server", "dep:sqlx", "dep:argon2", "dep:axum", "dep:dioxus-server", "dep:dotenvy", "dep:tower-cookies", "dep:tokio", "dep:tokio-cron-scheduler", "dep:openidconnect", "dep:reqwest", "reqwest/rustls-tls", "dep:jsonwebtoken", "dep:urlencoding"]
+
+# Fills a development database with test data, see `cargo seed`.
+[[example]]
+name = "seed"
+path = "seed/main.rs"
+required-features = ["server"]

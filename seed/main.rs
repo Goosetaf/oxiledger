@@ -4,22 +4,22 @@
 //! of [`dataset`], so running it again resets them to a known state. It never
 //! touches a user it did not create.
 //!
-//! This is a program of its own and shares no code with the app. It applies the
-//! app's migrations and then writes to the tables they create.
+//! This is a program of its own that uses the app as a library. A change to the
+//! app's types that breaks the seeder shows up when it is compiled.
 
 mod dataset;
 
 use std::fmt::{self, Display};
 
-use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
-    Argon2,
-};
 use chrono::{DateTime, Days, Local, NaiveDate, TimeDelta, Utc};
+use oxiledger::{
+    models::bank_sync::BankTransactionStatus,
+    server::{auth, db},
+};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use dataset::{BankAccount, BankTransactionStatus, Dataset, MAPPING_CONNECTIONS};
+use dataset::{BankAccount, Dataset, MAPPING_CONNECTIONS};
 
 /// Owns the household described by [`dataset`].
 const DEV_USER: &str = "dev";
@@ -32,28 +32,15 @@ const PASSWORD: &str = "dev-password";
 
 #[tokio::main]
 async fn main() {
-    dotenvy::dotenv().ok();
+    let pool = db::connect().await;
 
-    match run().await {
+    match seed(&pool, Local::now()).await {
         Ok(summary) => println!("{summary}"),
         Err(err) => {
             eprintln!("Seeding failed: {err}");
             std::process::exit(1);
         }
     }
-}
-
-/// Migrates the database, then resets the seeded users.
-async fn run() -> Result<Summary, SeedError> {
-    let database_url =
-        std::env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
-    let pool = PgPool::connect(&database_url).await?;
-    sqlx::migrate!("../migrations")
-        .run(&pool)
-        .await
-        .map_err(sqlx::Error::from)?;
-
-    seed(&pool, Local::now()).await
 }
 
 enum SeedError {
@@ -112,7 +99,7 @@ impl Row {
 async fn seed(pool: &PgPool, now: DateTime<Local>) -> Result<Summary, SeedError> {
     let today = now.date_naive();
     let data = Dataset::household(today);
-    let password_hash = hash_password(PASSWORD);
+    let password_hash = auth::hash_password(PASSWORD).expect("Failed to hash the seed password");
 
     let mut tx = pool.begin().await?;
 
@@ -163,14 +150,6 @@ async fn seed(pool: &PgPool, now: DateTime<Local>) -> Result<Summary, SeedError>
 
 fn email(username: &str) -> String {
     format!("{username}@oxiledger.test")
-}
-
-/// Hashes a password the way the app does, so the seeded users can log in.
-fn hash_password(password: &str) -> String {
-    Argon2::default()
-        .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
-        .expect("Failed to hash the seed password")
-        .to_string()
 }
 
 /// Removes the users an earlier run created. A user that only shares a
@@ -230,7 +209,7 @@ async fn write_household(
         .bind(account.name)
         .bind(account.code)
         .bind(account.account_type)
-        .bind(account.account_type.normal_balance())
+        .bind(account.account_type.default_normal_balance())
         .bind(account.description)
         .bind(account.is_active)
         .execute(&mut **tx)
