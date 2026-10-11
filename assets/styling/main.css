@@ -1211,19 +1211,109 @@ table {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
-.pref-caption {
-  margin: 0 0 6px 2px;
-  color: var(--text-muted);
-  font-size: 0.75rem;
+/* Each group is labelled and framed: phone tab bar, menu, hidden. */
+.pref-group + .pref-group {
+  margin-top: 18px;
+}
+
+.pref-group > .field-label {
+  margin: 0 0 8px;
 }
 
 .pref-list {
   margin: 0;
   padding: 0;
   list-style: none;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+}
+
+/* The phone tab bar, drawn as the bar it is: one slot per shortcut, carrying
+   the tab bar's own colour. Each slot has a native picker laid over it. */
+.slot-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  background: rgba(249, 115, 22, 0.05);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+  border-radius: var(--radius-md);
+}
+
+.slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 64px;
+  padding: 8px 6px;
+  color: #fb923c;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.slot + .slot {
+  border-left: 1px solid rgba(249, 115, 22, 0.18);
+}
+
+/* A small caret marks a slot as something that opens. */
+.slot::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: rotate(45deg);
+}
+
+.slot .icon {
+  width: 22px;
+  height: 22px;
+}
+
+.slot-label {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot.is-empty {
+  color: var(--text-muted);
+}
+
+.slot-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  font-size: 1rem;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.slot:has(.slot-select:disabled) {
+  opacity: 0.35;
+}
+
+.slot:has(.slot-select:disabled)::after {
+  content: none;
+}
+
+.slot-select:disabled {
+  cursor: default;
+}
+
+.slot:has(.slot-select:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }
 
 .pref-row {
@@ -1231,46 +1321,20 @@ table {
   align-items: center;
   gap: 12px;
   min-height: 52px;
-  padding: 6px 8px 6px 14px;
+  padding: 7px 8px 7px 14px;
 }
 
 .pref-row + .pref-row {
   border-top: 1px solid var(--line);
 }
 
-/* The destinations in the phone tab bar read as one block and carry the tab
-   bar's own mark, so where the bar ends is drawn rather than described. */
-.pref-row.is-shortcut {
-  background: rgba(249, 115, 22, 0.07);
-  box-shadow: inset 2px 0 0 #f97316;
-}
-
-.pref-row.is-shortcut:first-child {
-  border-top-left-radius: var(--radius-md);
-  border-top-right-radius: var(--radius-md);
-}
-
-.pref-row.is-shortcut:not(:has(+ .is-shortcut)) {
-  border-bottom-right-radius: var(--radius-md);
-  border-bottom-left-radius: var(--radius-md);
-}
-
-.pref-row.is-shortcut + .pref-row:not(.is-shortcut) {
-  margin-top: 10px;
-  border-top: 0;
-}
-
 .pref-row > .icon {
   color: var(--text-muted);
 }
 
-.pref-row.is-shortcut > .icon {
-  color: #fb923c;
-}
-
 .pref-row.is-hidden > .icon,
 .pref-row.is-hidden > .pref-label {
-  opacity: 0.4;
+  opacity: 0.45;
 }
 
 .pref-label {
@@ -1279,21 +1343,42 @@ table {
   overflow-wrap: anywhere;
 }
 
+/* A row's controls sit in one segmented cluster rather than as loose icons. */
 .pref-actions {
   display: flex;
   flex: 0 0 auto;
-  gap: 2px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
 }
 
-/* Row controls are bare icons, so a list of them does not turn into a grid of boxes. */
 .pref-actions .btn-icon {
+  width: 36px;
+  min-height: 36px;
+  color: var(--text-muted);
   background: none;
-  border-color: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
-.pref-actions .btn-icon .icon {
-  width: 18px;
-  height: 18px;
+.pref-actions .btn-icon:first-child {
+  border-top-left-radius: 7px;
+  border-bottom-left-radius: 7px;
+}
+
+.pref-actions .btn-icon:last-child {
+  border-top-right-radius: 7px;
+  border-bottom-right-radius: 7px;
+}
+
+.pref-actions .btn-icon + .btn-icon {
+  border-left: 1px solid var(--line-soft);
+}
+
+.pref-actions .btn-icon:hover:not([disabled]),
+.pref-actions .btn-icon:focus-visible:not([disabled]) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .btn-icon {
@@ -1304,6 +1389,11 @@ table {
 .btn-icon .icon {
   width: 16px;
   height: 16px;
+}
+
+.pref-actions .btn-icon .icon {
+  width: 18px;
+  height: 18px;
 }
 
 /* ============================================================
@@ -1619,7 +1709,12 @@ table {
 
   .pref-row {
     gap: 10px;
-    padding-right: 6px;
+    padding-left: 12px;
+  }
+
+  .pref-actions .btn-icon {
+    width: 38px;
+    min-height: 38px;
   }
 
 
@@ -2051,6 +2146,12 @@ table {
 
   .tab-add {
     margin: 0 2px;
+  }
+
+  .slot {
+    padding-right: 2px;
+    padding-left: 2px;
+    font-size: 0.6875rem;
   }
 }
 

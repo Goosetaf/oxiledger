@@ -9,14 +9,15 @@
 //! 3. assign its pages in [`Route::destination`].
 //!
 //! The compiler asks for steps 2 and 3. Existing users get the new destination
-//! at the end of their navigation; nothing they arranged moves.
+//! at the end of their navigation; nothing they arranged moves, and their
+//! phone shortcuts stay as they chose them.
 
 use crate::Route;
 use serde::{Deserialize, Deserializer, Serialize};
 use strum::VariantArray;
 
 /// How many destinations fit beside "+" and "Menu" in the phone tab bar.
-const SHORTCUT_SLOTS: usize = 3;
+pub const SHORTCUT_SLOTS: usize = 3;
 
 /// A top-level place in the app. The variants are in the order a new user sees
 /// them.
@@ -108,15 +109,21 @@ impl Route {
 
 /// One user's arrangement of the navigation.
 ///
-/// Every destination is either shown or hidden, never both and never neither.
-/// That holds for any value of this type, however it was produced: reading it
-/// from the database or from a request repairs what is stale (see
+/// Two things are arranged separately, because a phone and a desk are used
+/// for different things: the order of the sidebar and phone menu, and which
+/// destinations are shortcuts in the phone tab bar.
+///
+/// Every destination is either shown or hidden, never both and never neither,
+/// and the shortcuts are shown destinations, each at most once. That holds for
+/// any value of this type, however it was produced: reading it from the
+/// database or from a request repairs what is stale (see
 /// [`StoredNavPreferences`]), and the editing methods keep it true.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(from = "StoredNavPreferences")]
 pub struct NavPreferences {
     shown: Vec<Destination>,
     hidden: Vec<Destination>,
+    shortcuts: Vec<Destination>,
 }
 
 impl Default for NavPreferences {
@@ -124,19 +131,21 @@ impl Default for NavPreferences {
         Self {
             shown: Destination::ALL.to_vec(),
             hidden: Vec::new(),
+            shortcuts: Destination::ALL.iter().copied().take(SHORTCUT_SLOTS).collect(),
         }
     }
 }
 
 impl NavPreferences {
-    /// Destinations in the sidebar and the phone menu, most used first.
+    /// Destinations in the sidebar and the phone menu, in that order.
     pub fn shown(&self) -> &[Destination] {
         &self.shown
     }
 
-    /// The first few shown destinations: the ones in the phone tab bar.
+    /// Destinations in the phone tab bar, left to right. At most
+    /// [`SHORTCUT_SLOTS`], with no gaps.
     pub fn shortcuts(&self) -> &[Destination] {
-        &self.shown[..self.shown.len().min(SHORTCUT_SLOTS)]
+        &self.shortcuts
     }
 
     /// Destinations left out of the navigation. Their pages still open by link.
@@ -162,10 +171,13 @@ impl NavPreferences {
         }
     }
 
+    /// Takes a destination out of the navigation, and out of the tab bar if it
+    /// was a shortcut.
     pub fn hide(&mut self, destination: Destination) {
         if let Some(index) = self.shown.iter().position(|d| *d == destination) {
             self.shown.remove(index);
             self.hidden.push(destination);
+            self.shortcuts.retain(|d| *d != destination);
         }
     }
 
@@ -176,14 +188,46 @@ impl NavPreferences {
             self.shown.push(destination);
         }
     }
+
+    /// Puts a shown destination in a tab bar slot, or empties the slot with
+    /// `None`.
+    ///
+    /// A destination appears in the tab bar once, so choosing one that already
+    /// has a slot swaps the two. Slots have no gaps: emptying one closes up
+    /// the rest, and a slot past the last shortcut means the first free one.
+    pub fn set_shortcut(&mut self, slot: usize, destination: Option<Destination>) {
+        if slot >= SHORTCUT_SLOTS {
+            return;
+        }
+
+        let Some(destination) = destination else {
+            if slot < self.shortcuts.len() {
+                self.shortcuts.remove(slot);
+            }
+            return;
+        };
+        if !self.shown.contains(&destination) {
+            return;
+        }
+
+        match self.shortcuts.iter().position(|d| *d == destination) {
+            Some(current) => {
+                let target = slot.min(self.shortcuts.len() - 1);
+                self.shortcuts.swap(current, target);
+            }
+            None if slot < self.shortcuts.len() => self.shortcuts[slot] = destination,
+            None => self.shortcuts.push(destination),
+        }
+    }
 }
 
 /// [`NavPreferences`] as it arrives from storage or a request, before repair.
 ///
 /// It may predate a destination, name one that no longer exists, or list one
 /// twice. Converting it keeps what the user chose and fills in the rest:
-/// unknown names are dropped, and destinations it never mentions are shown
-/// after the ones it does.
+/// unknown names are dropped, destinations it never mentions are shown after
+/// the ones it does, and shortcuts that are no longer shown are dropped. Only
+/// a value that has never chosen shortcuts gets the default ones.
 #[derive(Default, Deserialize)]
 #[serde(default)]
 struct StoredNavPreferences {
@@ -191,6 +235,8 @@ struct StoredNavPreferences {
     shown: Vec<Destination>,
     #[serde(deserialize_with = "known_destinations")]
     hidden: Vec<Destination>,
+    #[serde(deserialize_with = "known_destinations_if_present")]
+    shortcuts: Option<Vec<Destination>>,
 }
 
 impl From<StoredNavPreferences> for NavPreferences {
@@ -209,7 +255,22 @@ impl From<StoredNavPreferences> for NavPreferences {
             }
         }
 
-        Self { shown, hidden }
+        let chosen = stored.shortcuts.unwrap_or_else(|| shown.clone());
+        let mut shortcuts = Vec::new();
+        for destination in chosen {
+            if shortcuts.len() < SHORTCUT_SLOTS
+                && shown.contains(&destination)
+                && !shortcuts.contains(&destination)
+            {
+                shortcuts.push(destination);
+            }
+        }
+
+        Self {
+            shown,
+            hidden,
+            shortcuts,
+        }
     }
 }
 
@@ -224,6 +285,14 @@ fn known_destinations<'de, D: Deserializer<'de>>(
         .iter()
         .filter_map(|name| Destination::deserialize(StrDeserializer::<Error>::new(name)).ok())
         .collect())
+}
+
+/// As [`known_destinations`], telling a list that was never saved apart from
+/// one saved empty.
+fn known_destinations_if_present<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<Destination>>, D::Error> {
+    known_destinations(deserializer).map(Some)
 }
 
 #[cfg(test)]
@@ -271,20 +340,63 @@ mod tests {
     }
 
     #[test]
-    fn the_first_shown_destinations_are_the_phone_shortcuts() {
-        let mut preferences = NavPreferences::default();
+    fn a_new_user_gets_the_first_destinations_as_phone_shortcuts() {
+        let preferences = NavPreferences::default();
+
         assert_eq!(preferences.shortcuts(), &Destination::ALL[..SHORTCUT_SLOTS]);
+    }
 
-        // Hiding a shortcut hands its slot to the next destination in line.
-        preferences.hide(Dashboard);
-        assert_eq!(preferences.shortcuts(), &Destination::ALL[1..=SHORTCUT_SLOTS]);
+    #[test]
+    fn phone_shortcuts_are_chosen_apart_from_the_order() {
+        let mut preferences = NavPreferences::default();
+        let shortcuts = preferences.shortcuts().to_vec();
 
-        // With fewer destinations than slots, all of them are shortcuts.
-        let mut few = NavPreferences::default();
-        for destination in all_except(&[Transactions, Accounts]) {
-            few.hide(destination);
-        }
-        assert_eq!(few.shortcuts(), [Transactions, Accounts]);
+        // Reordering the sidebar leaves the tab bar alone.
+        preferences.move_later(Dashboard);
+        preferences.move_earlier(BankAccounts);
+        assert_eq!(preferences.shortcuts(), shortcuts);
+
+        // And the tab bar can hold something from further down the list.
+        preferences.set_shortcut(0, Some(BankAccounts));
+        assert_eq!(preferences.shortcuts()[0], BankAccounts);
+        assert_eq!(preferences.shortcuts().len(), SHORTCUT_SLOTS);
+    }
+
+    #[test]
+    fn a_destination_takes_one_slot_at_most() {
+        let mut preferences = NavPreferences::default();
+        let [first, second, third] = [Dashboard, Transactions, Accounts];
+        assert_eq!(preferences.shortcuts(), [first, second, third]);
+
+        // Choosing one that already has a slot swaps the two.
+        preferences.set_shortcut(0, Some(third));
+        assert_eq!(preferences.shortcuts(), [third, second, first]);
+
+        // Emptying a slot closes the gap.
+        preferences.set_shortcut(0, None);
+        assert_eq!(preferences.shortcuts(), [second, first]);
+
+        // A slot past the end means the first free one.
+        preferences.set_shortcut(2, Some(third));
+        assert_eq!(preferences.shortcuts(), [second, first, third]);
+
+        // There are only so many slots, and hidden destinations get none.
+        preferences.set_shortcut(SHORTCUT_SLOTS, Some(BankAccounts));
+        preferences.hide(BankAccounts);
+        preferences.set_shortcut(0, Some(BankAccounts));
+        assert_eq!(preferences.shortcuts(), [second, first, third]);
+    }
+
+    #[test]
+    fn hiding_a_shortcut_frees_its_slot() {
+        let mut preferences = NavPreferences::default();
+
+        preferences.hide(Transactions);
+        assert_eq!(preferences.shortcuts(), [Dashboard, Accounts]);
+
+        // Showing it again does not put it back in the tab bar.
+        preferences.show(Transactions);
+        assert_eq!(preferences.shortcuts(), [Dashboard, Accounts]);
     }
 
     #[test]
@@ -332,10 +444,13 @@ mod tests {
         preferences.move_later(Dashboard);
         preferences.hide(Accounts);
 
+        preferences.set_shortcut(0, Some(BankAccounts));
+
         let saved = serde_json::to_value(&preferences).unwrap();
 
         assert_eq!(saved["shown"][1], json!("dashboard"));
         assert_eq!(saved["hidden"], json!(["accounts"]));
+        assert_eq!(saved["shortcuts"][0], json!("bank_accounts"));
         assert_eq!(read(saved), preferences);
     }
 
@@ -351,6 +466,26 @@ mod tests {
     }
 
     #[test]
+    fn a_destination_added_after_saving_takes_no_shortcut_slot() {
+        // Saved with one slot deliberately left free.
+        let preferences = read(json!({
+            "shown": ["transactions", "dashboard"],
+            "shortcuts": ["dashboard", "transactions"],
+        }));
+
+        assert_eq!(preferences.shortcuts(), [Dashboard, Transactions]);
+        assert_eq!(read(json!({ "shortcuts": [] })).shortcuts(), []);
+    }
+
+    #[test]
+    fn preferences_saved_before_shortcuts_existed_get_the_first_shown() {
+        let preferences = read(json!({ "shown": ["bank_accounts", "accounts"] }));
+
+        assert_eq!(preferences.shortcuts(), &preferences.shown()[..SHORTCUT_SLOTS]);
+        assert_eq!(preferences.shortcuts()[0], BankAccounts);
+    }
+
+    #[test]
     fn stale_or_damaged_preferences_are_repaired() {
         let preferences = read(json!({
             "shown": ["accounts", "retired_page", "accounts", "dashboard", "transactions"],
@@ -362,6 +497,13 @@ mod tests {
         expected.extend(all_except(&[Accounts, Dashboard, Transactions]));
         assert_eq!(preferences.shown(), expected);
         assert_eq!(preferences.hidden(), [Transactions]);
+
+        // Shortcuts get the same repair, and cannot point at something hidden.
+        let preferences = read(json!({
+            "hidden": ["transactions"],
+            "shortcuts": ["transactions", "accounts", "retired_page", "accounts", "dashboard"],
+        }));
+        assert_eq!(preferences.shortcuts(), [Accounts, Dashboard]);
     }
 
     #[test]
