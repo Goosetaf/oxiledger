@@ -284,7 +284,56 @@ table {
 
 .sidebar-footer {
   border-top: 1px solid var(--line);
-  padding-top: 16px;
+  padding-top: 8px;
+}
+
+/* Who is signed in, with the way out beside it. */
+.sidebar-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 14px 16px 0 24px;
+  border-top: 1px solid var(--line);
+}
+
+.account-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.account-name {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-signout {
+  flex: 0 0 auto;
+  padding: 8px;
+  color: var(--text-muted);
+  background: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 180ms ease;
+}
+
+.account-signout:hover,
+.account-signout:focus-visible {
+  color: var(--text);
+}
+
+.account-signout:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 /* Topbar */
@@ -1152,17 +1201,6 @@ table {
 }
 
 /* ============================================================
-   USER INFO (topbar)
-   ============================================================ */
-
-.nav-user {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-/* ============================================================
    RESPONSIVE
    ============================================================ */
 
@@ -1503,6 +1541,19 @@ table {
   .menu-open .sidebar-footer {
     margin-top: 8px;
     padding-top: 8px;
+  }
+
+  .menu-open .sidebar-account {
+    padding-top: 10px;
+    padding-bottom: 4px;
+  }
+
+  .menu-open .account-signout {
+    min-height: 44px;
+    color: var(--text);
+    font-size: 0.875rem;
+    letter-spacing: 0;
+    text-transform: none;
   }
 
   .menu-backdrop {

@@ -324,24 +324,24 @@ fn Shell(user: CurrentUser) -> Element {
                     }
                 }
 
-                // Footer links
+                // Footer: settings, then who is signed in with the way out beside it
                 div { class: "sidebar-footer",
-                    div {
-                        class: "nav-user",
-                        style: "padding: 8px 24px; align-items: flex-start;",
-                        span { class: "eyebrow", "Signed In" }
-                        span { class: "label-strong", "{user.username}" }
-                    }
                     Link {
                         to: Route::Customize {},
                         class: if matches!(route, Route::Customize {}) { "nav-link is-active" } else { "nav-link" },
                         "Customize"
                     }
-                    button {
-                        class: "nav-link",
-                        style: "width: 100%; justify-content: flex-start; border-radius: 0; text-align: left; background: none; cursor: pointer;",
-                        onclick: handle_logout,
-                        "Sign out"
+                    div { class: "sidebar-account",
+                        div { class: "account-identity",
+                            span { class: "eyebrow", "Signed In" }
+                            span { class: "account-name", "{user.username}" }
+                        }
+                        button {
+                            class: "account-signout",
+                            r#type: "button",
+                            onclick: handle_logout,
+                            "Sign out"
+                        }
                     }
                 }
             }
