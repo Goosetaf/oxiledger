@@ -129,12 +129,6 @@ fn server_main() {
 
     dotenvy::dotenv().ok();
 
-    // `cargo seed`: fill the database with test data instead of serving.
-    #[cfg(feature = "seed")]
-    if std::env::args().nth(1).as_deref() == Some("seed") {
-        return server::seed::run();
-    }
-
     dioxus::serve(|| async move {
         let pool = server::db::connect().await;
         server::db::run_migrations(&pool).await;

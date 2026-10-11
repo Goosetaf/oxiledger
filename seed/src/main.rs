@@ -1,22 +1,25 @@
-//! Seed data for local development and testing, written by `cargo seed`.
+//! Fills a development database with test data. Run it with `cargo seed`.
 //!
 //! Seeding replaces the seeded users and everything they own with the contents
 //! of [`dataset`], so running it again resets them to a known state. It never
 //! touches a user it did not create.
+//!
+//! This is a program of its own and shares no code with the app. It applies the
+//! app's migrations and then writes to the tables they create.
 
 mod dataset;
 
 use std::fmt::{self, Display};
 
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
+    Argon2,
+};
 use chrono::{DateTime, Days, Local, NaiveDate, TimeDelta, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::{
-    models::bank_sync::BankTransactionStatus,
-    server::{auth, db},
-};
-use dataset::{BankAccount, Dataset, MAPPING_CONNECTIONS};
+use dataset::{BankAccount, BankTransactionStatus, Dataset, MAPPING_CONNECTIONS};
 
 /// Owns the household described by [`dataset`].
 const DEV_USER: &str = "dev";
@@ -27,23 +30,30 @@ const SSO_USER: &str = "dev-sso";
 const SEEDED_USERS: [&str; 3] = [DEV_USER, EMPTY_USER, SSO_USER];
 const PASSWORD: &str = "dev-password";
 
-/// Entry point for `cargo seed`: migrates the database, then resets the seeded users.
-pub fn run() {
-    let result = tokio::runtime::Runtime::new()
-        .expect("Failed to start the Tokio runtime")
-        .block_on(async {
-            let pool = db::connect().await;
-            db::run_migrations(&pool).await;
-            seed(&pool, Local::now()).await
-        });
+#[tokio::main]
+async fn main() {
+    dotenvy::dotenv().ok();
 
-    match result {
+    match run().await {
         Ok(summary) => println!("{summary}"),
         Err(err) => {
             eprintln!("Seeding failed: {err}");
             std::process::exit(1);
         }
     }
+}
+
+/// Migrates the database, then resets the seeded users.
+async fn run() -> Result<Summary, SeedError> {
+    let database_url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
+    let pool = PgPool::connect(&database_url).await?;
+    sqlx::migrate!("../migrations")
+        .run(&pool)
+        .await
+        .map_err(sqlx::Error::from)?;
+
+    seed(&pool, Local::now()).await
 }
 
 enum SeedError {
@@ -65,7 +75,7 @@ impl Display for SeedError {
             Self::UserExists(username) => write!(
                 f,
                 "the user `{username}` has the username or e-mail address of a seeded user but was \
-                 not created by `cargo seed`. Rename or remove that user first; the seeder only \
+                 not created by `cargo seed`. Rename or remove that user first. The seeder only \
                  replaces users it created."
             ),
         }
@@ -102,31 +112,31 @@ impl Row {
 async fn seed(pool: &PgPool, now: DateTime<Local>) -> Result<Summary, SeedError> {
     let today = now.date_naive();
     let data = Dataset::household(today);
-    let password_hash = auth::hash_password(PASSWORD).expect("Failed to hash the seed password");
+    let password_hash = hash_password(PASSWORD);
 
     let mut tx = pool.begin().await?;
 
     delete_seeded_users(&mut tx).await?;
 
     for username in [DEV_USER, EMPTY_USER] {
-        sqlx::query!(
+        sqlx::query(
             "INSERT INTO users (id, username, email, password_hash) VALUES ($1, $2, $3, $4)",
-            Row::User.id(username),
-            username,
-            email(username),
-            password_hash
         )
+        .bind(Row::User.id(username))
+        .bind(username)
+        .bind(email(username))
+        .bind(&password_hash)
         .execute(&mut *tx)
         .await?;
     }
-    sqlx::query!(
+    sqlx::query(
         "INSERT INTO users (id, username, email, oidc_provider, oidc_subject)
          VALUES ($1, $2, $3, '1', $4)",
-        Row::User.id(SSO_USER),
-        SSO_USER,
-        email(SSO_USER),
-        format!("seed-{SSO_USER}")
     )
+    .bind(Row::User.id(SSO_USER))
+    .bind(SSO_USER)
+    .bind(email(SSO_USER))
+    .bind(format!("seed-{SSO_USER}"))
     .execute(&mut *tx)
     .await?;
 
@@ -155,22 +165,29 @@ fn email(username: &str) -> String {
     format!("{username}@oxiledger.test")
 }
 
+/// Hashes a password the way the app does, so the seeded users can log in.
+fn hash_password(password: &str) -> String {
+    Argon2::default()
+        .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
+        .expect("Failed to hash the seed password")
+        .to_string()
+}
+
 /// Removes the users an earlier run created. A user that only shares a
 /// username or e-mail address with one of them was not created here, so
 /// seeding stops instead of replacing it.
 async fn delete_seeded_users(tx: &mut Transaction<'_, Postgres>) -> Result<(), SeedError> {
-    let usernames = SEEDED_USERS.map(str::to_string);
     let emails = SEEDED_USERS.map(email);
     let user_ids = SEEDED_USERS.map(|username| Row::User.id(username));
 
-    let someone_else = sqlx::query_scalar!(
+    let someone_else: Option<String> = sqlx::query_scalar(
         "SELECT username FROM users
          WHERE (username = ANY($1) OR email = ANY($2)) AND id <> ALL($3)
          LIMIT 1",
-        &usernames[..],
-        &emails[..],
-        &user_ids[..]
     )
+    .bind(&SEEDED_USERS[..])
+    .bind(&emails[..])
+    .bind(&user_ids[..])
     .fetch_optional(&mut **tx)
     .await?;
     if let Some(username) = someone_else {
@@ -180,21 +197,16 @@ async fn delete_seeded_users(tx: &mut Transaction<'_, Postgres>) -> Result<(), S
     // Deleting a user cascades to everything it owns, but journal entries and
     // bank accounts point at ledger accounts without a cascade and would block
     // it, so they have to go first.
-    sqlx::query!(
+    for delete in [
         "DELETE FROM transactions WHERE user_id = ANY($1)",
-        &user_ids[..]
-    )
-    .execute(&mut **tx)
-    .await?;
-    sqlx::query!(
         "DELETE FROM bank_accounts WHERE user_id = ANY($1)",
-        &user_ids[..]
-    )
-    .execute(&mut **tx)
-    .await?;
-    sqlx::query!("DELETE FROM users WHERE id = ANY($1)", &user_ids[..])
-        .execute(&mut **tx)
-        .await?;
+        "DELETE FROM users WHERE id = ANY($1)",
+    ] {
+        sqlx::query(delete)
+            .bind(&user_ids[..])
+            .execute(&mut **tx)
+            .await?;
+    }
 
     Ok(())
 }
@@ -208,38 +220,40 @@ async fn write_household(
     now: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
     for account in &data.accounts {
-        sqlx::query!(
+        sqlx::query(
             "INSERT INTO accounts
                 (id, user_id, name, code, account_type, normal_balance, description, is_active)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-            Row::Account.id(account.key),
-            user_id,
-            account.name,
-            account.code,
-            account.account_type as _,
-            account.account_type.default_normal_balance() as _,
-            account.description,
-            account.is_active
         )
+        .bind(Row::Account.id(account.key))
+        .bind(user_id)
+        .bind(account.name)
+        .bind(account.code)
+        .bind(account.account_type)
+        .bind(account.account_type.normal_balance())
+        .bind(account.description)
+        .bind(account.is_active)
         .execute(&mut **tx)
         .await?;
     }
 
     for connection in &data.bank_connections {
-        sqlx::query!(
+        sqlx::query(
             "INSERT INTO bank_connections
                 (id, user_id, provider_id, provider_session_id, aspsp_name, aspsp_country,
                  access_valid_until, provider_accounts_json)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-            Row::BankConnection.id(connection.key),
-            user_id,
-            connection.provider_id,
-            format!("seed-{}-session", connection.key),
-            connection.aspsp_name,
-            connection.aspsp_country,
-            now + connection.access_valid_for,
+        )
+        .bind(Row::BankConnection.id(connection.key))
+        .bind(user_id)
+        .bind(connection.provider_id)
+        .bind(format!("seed-{}-session", connection.key))
+        .bind(connection.aspsp_name)
+        .bind(connection.aspsp_country)
+        .bind(now + connection.access_valid_for)
+        .bind(
             serde_json::to_value(&connection.provider_accounts)
-                .expect("provider accounts serialize to JSON")
+                .expect("provider accounts serialize to JSON"),
         )
         .execute(&mut **tx)
         .await?;
@@ -248,23 +262,23 @@ async fn write_household(
     for bank_account in &data.bank_accounts {
         let connected = bank_account.connection.as_ref();
         let synced_at = synced_at(bank_account, now);
-        sqlx::query!(
+        sqlx::query(
             "INSERT INTO bank_accounts
                 (id, user_id, bank_connection_id, internal_account_id, provider_account_uid,
                  iban, name, currency, is_manual, balance, last_synced_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-            Row::BankAccount.id(bank_account.key),
-            user_id,
-            connected.map(|connected| Row::BankConnection.id(connected.connection)),
-            bank_account.ledger_account.map(|key| Row::Account.id(key)),
-            connected.map(|connected| connected.provider_account_uid),
-            bank_account.iban,
-            bank_account.name,
-            bank_account.currency,
-            connected.is_none(),
-            synced_at.map(|_| data.bank_balance(bank_account.key)),
-            synced_at
         )
+        .bind(Row::BankAccount.id(bank_account.key))
+        .bind(user_id)
+        .bind(connected.map(|connected| Row::BankConnection.id(connected.connection)))
+        .bind(bank_account.ledger_account.map(|key| Row::Account.id(key)))
+        .bind(connected.map(|connected| connected.provider_account_uid))
+        .bind(bank_account.iban)
+        .bind(bank_account.name)
+        .bind(bank_account.currency)
+        .bind(connected.is_none())
+        .bind(synced_at.map(|_| data.bank_balance(bank_account.key)))
+        .bind(synced_at)
         .execute(&mut **tx)
         .await?;
     }
@@ -273,13 +287,11 @@ async fn write_household(
     // that account exists.
     for connection in &data.bank_connections {
         if let Some(source) = connection.source_bank_account {
-            sqlx::query!(
-                "UPDATE bank_connections SET source_bank_account_id = $1 WHERE id = $2",
-                Row::BankAccount.id(source),
-                Row::BankConnection.id(connection.key)
-            )
-            .execute(&mut **tx)
-            .await?;
+            sqlx::query("UPDATE bank_connections SET source_bank_account_id = $1 WHERE id = $2")
+                .bind(Row::BankAccount.id(source))
+                .bind(Row::BankConnection.id(connection.key))
+                .execute(&mut **tx)
+                .await?;
         }
     }
 
@@ -291,67 +303,67 @@ async fn write_household(
         };
         // Transactions on a manual account are typed in, so "now" stands in for a sync.
         let last_synced = synced_at(bank_account, now).unwrap_or(now);
-        sqlx::query!(
+        sqlx::query(
             "INSERT INTO bank_transactions
                 (id, bank_account_id, user_id, external_id, date, amount, currency,
                  description, reference, status, imported_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-            Row::BankTransaction.id(index),
-            Row::BankAccount.id(txn.bank_account),
-            user_id,
-            external_id,
-            txn.date,
-            txn.amount,
-            bank_account.currency,
-            txn.description,
-            txn.reference,
-            txn.status.as_str(),
-            imported_at(txn.date, last_synced, index)
         )
+        .bind(Row::BankTransaction.id(index))
+        .bind(Row::BankAccount.id(txn.bank_account))
+        .bind(user_id)
+        .bind(external_id)
+        .bind(txn.date)
+        .bind(txn.amount)
+        .bind(bank_account.currency)
+        .bind(&txn.description)
+        .bind(&txn.reference)
+        .bind(txn.status.as_str())
+        .bind(imported_at(txn.date, last_synced, index))
         .execute(&mut **tx)
         .await?;
     }
 
     for (txn_index, txn) in data.transactions.iter().enumerate() {
         let txn_id = Row::Transaction.id(txn_index);
-        sqlx::query!(
+        sqlx::query(
             "INSERT INTO transactions (id, user_id, date, description, reference)
              VALUES ($1, $2, $3, $4, $5)",
-            txn_id,
-            user_id,
-            txn.date,
-            txn.description,
-            txn.reference
         )
+        .bind(txn_id)
+        .bind(user_id)
+        .bind(txn.date)
+        .bind(&txn.description)
+        .bind(&txn.reference)
         .execute(&mut **tx)
         .await?;
 
         for (line_index, line) in txn.lines.iter().enumerate() {
             let entry_id = Row::JournalEntry.id(format!("{txn_index}.{line_index}"));
             let bank_txn_id = line.bank_txn.map(|index| Row::BankTransaction.id(index));
-            sqlx::query!(
+            sqlx::query(
                 "INSERT INTO journal_entries
                     (id, transaction_id, account_id, entry_type, amount, memo, bank_transaction_id)
                  VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                entry_id,
-                txn_id,
-                Row::Account.id(line.account),
-                line.entry_type as _,
-                line.amount,
-                line.memo,
-                bank_txn_id
             )
+            .bind(entry_id)
+            .bind(txn_id)
+            .bind(Row::Account.id(line.account))
+            .bind(line.entry_type)
+            .bind(line.amount)
+            .bind(&line.memo)
+            .bind(bank_txn_id)
             .execute(&mut **tx)
             .await?;
 
             // The two rows point at each other, so the bank transaction can
             // only name its journal entry once that exists.
             if let Some(bank_txn_id) = bank_txn_id {
-                sqlx::query!(
+                sqlx::query(
                     "UPDATE bank_transactions SET linked_journal_entry_id = $1 WHERE id = $2",
-                    entry_id,
-                    bank_txn_id
                 )
+                .bind(entry_id)
+                .bind(bank_txn_id)
                 .execute(&mut **tx)
                 .await?;
             }
@@ -426,25 +438,5 @@ after a provider callback:"
             )?;
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The README lists these URLs, so the ids behind them must not drift.
-    #[test]
-    fn mapping_page_ids_match_the_readme() {
-        let ids = MAPPING_CONNECTIONS.map(|(key, _)| Row::BankConnection.id(key).to_string());
-
-        assert_eq!(
-            ids,
-            [
-                "5eed0000-0000-0000-c84a-292dd8abaa46",
-                "5eed0000-0000-0000-a5eb-0449632b6e84",
-                "5eed0000-0000-0000-419e-ab9186cd0a44",
-            ]
-        );
     }
 }

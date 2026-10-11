@@ -1,3 +1,2 @@
 [alias]
-# Reset the seeded users and their data. See "Seed data" in the README.
-seed = "run --no-default-features --features seed -- seed"
+seed = "run --manifest-path seed/Cargo.toml"

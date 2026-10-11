@@ -1,26 +1,24 @@
-//! The household written by `cargo seed`: realistic data to develop and test against.
+//! The household that `cargo seed` writes. It is realistic data to develop and
+//! test against.
 //!
-//! This module is pure data: it describes ledger accounts, bank accounts and
-//! transactions relative to a given "today" and knows nothing about the
-//! database. The parent module turns it into rows.
+//! This module only describes the data. It lists ledger accounts, bank accounts
+//! and transactions for a given "today" and knows nothing about the database.
+//! `main.rs` turns it into rows.
 //!
-//! Dates are relative to "today": a few months of booked history, a handful of
-//! bank transactions from the last days still waiting to be posted, and a
-//! pending transfer dated today. Seeding again moves all of it forward.
+//! Every date is relative to "today". There are a few months of booked history,
+//! a handful of bank transactions from the last days that still wait to be
+//! posted, and a pending transfer dated today. Seeding again moves all of it
+//! forward.
 
 use std::collections::HashMap;
 
 use chrono::{Datelike, Days, Months, NaiveDate, TimeDelta};
 use rust_decimal::Decimal;
-
-use crate::{
-    bank_sync::provider::ProviderBankAccount,
-    models::{account::AccountType, bank_sync::BankTransactionStatus, transaction::EntryType},
-};
+use serde::Serialize;
 
 /// Full months of history before the current month.
 const HISTORY_MONTHS: u32 = 5;
-/// Recurring bank activity is booked up to this many days ago; anything newer
+/// Recurring bank activity is booked up to this many days ago. Anything newer
 /// comes from [`Builder::recent_activity`] and is left for the user to post.
 const UNBOOKED_DAYS: u64 = 4;
 /// The credit card's consent has lapsed, so its history stops at the last sync.
@@ -89,6 +87,71 @@ pub const MAPPING_CONNECTIONS: [(&str, &str); 3] = [
     (DANSKE, "the bank returned no accounts"),
 ];
 
+/// The `account_type` enum in the database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "account_type")]
+pub enum AccountType {
+    Asset,
+    Liability,
+    Equity,
+    Revenue,
+    Expense,
+}
+
+impl AccountType {
+    /// The side that accounts of this type normally carry their balance on.
+    pub fn normal_balance(self) -> NormalBalance {
+        match self {
+            Self::Asset | Self::Expense => NormalBalance::Debit,
+            Self::Liability | Self::Equity | Self::Revenue => NormalBalance::Credit,
+        }
+    }
+}
+
+/// The `normal_balance` enum in the database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "normal_balance")]
+pub enum NormalBalance {
+    Debit,
+    Credit,
+}
+
+/// The `entry_type` enum in the database.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "entry_type")]
+pub enum EntryType {
+    Debit,
+    Credit,
+}
+
+/// The values the app stores in `bank_transactions.status`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BankTransactionStatus {
+    Pending,
+    Linked,
+    Dismissed,
+}
+
+impl BankTransactionStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Linked => "linked",
+            Self::Dismissed => "dismissed",
+        }
+    }
+}
+
+/// An account as the bank reported it after authorization. The app reads these
+/// fields from `bank_connections.provider_accounts_json` on the mapping page.
+#[derive(Serialize)]
+pub struct ProviderBankAccount {
+    pub uid: String,
+    pub name: Option<String>,
+    pub iban: Option<String>,
+    pub currency: String,
+}
+
 pub struct LedgerAccount {
     pub key: &'static str,
     pub code: Option<&'static str>,
@@ -103,7 +166,7 @@ pub struct BankConnection {
     pub provider_id: &'static str,
     pub aspsp_name: &'static str,
     pub aspsp_country: &'static str,
-    /// Consent expiry relative to the time of seeding; negative means expired.
+    /// Consent expiry relative to the time of seeding. Negative means expired.
     pub access_valid_for: TimeDelta,
     pub provider_accounts: Vec<ProviderBankAccount>,
     /// The manual bank account this connection was started from, if any.
@@ -128,14 +191,14 @@ pub struct BankAccount {
 pub struct ConnectedAccount {
     pub connection: &'static str,
     pub provider_account_uid: &'static str,
-    /// How long before seeding the account was last synced; `None` for never.
+    /// How long before seeding the account was last synced, or `None` for never.
     pub last_synced_ago: Option<TimeDelta>,
 }
 
 pub struct BankTxn {
     pub bank_account: &'static str,
     pub date: NaiveDate,
-    /// Signed amount: positive = inflow, negative = outflow.
+    /// Positive for an inflow and negative for an outflow.
     pub amount: Decimal,
     pub description: String,
     pub reference: Option<String>,
@@ -233,8 +296,8 @@ impl Dataset {
             .unwrap_or_else(|| panic!("unknown bank account '{key}'"))
     }
 
-    /// The balance the bank would report: everything on the statement, whether
-    /// or not it has been booked in the ledger yet.
+    /// The balance the bank would report. It covers everything on the statement,
+    /// whether or not it has been booked in the ledger yet.
     pub fn bank_balance(&self, key: &str) -> Decimal {
         let bank_account = self.bank_account(key);
         self.bank_transactions
@@ -350,7 +413,7 @@ fn bank_connections() -> Vec<BankConnection> {
             )],
             ..connection(NORWEGIAN, "gocardless", "Bank Norwegian", "FI", -10)
         },
-        // A renewed Nordea consent: one account is already linked through the
+        // A renewed Nordea consent. One account is already linked through the
         // connection above, the other two are new, and one of those has neither
         // a name nor an IBAN.
         BankConnection {
@@ -429,7 +492,7 @@ fn bank_accounts() -> Vec<BankAccount> {
             connected(NORDEA, "seed-nordea-savings", synced),
             eur(6200, 0),
         ),
-        // Mapped without a ledger account and never synced; the bank returned no name.
+        // Mapped without a ledger account and never synced. The bank returned no name.
         account(
             NORDEA_UNMAPPED,
             None,
@@ -477,9 +540,9 @@ struct Builder {
     data: Dataset,
     today: NaiveDate,
     rng: Rng,
-    /// Card purchases less refunds per (year, month); the next month's invoice pays it off.
+    /// Card purchases less refunds per (year, month). The next month's invoice pays it off.
     card_activity: HashMap<(i32, u32), Decimal>,
-    /// What is still owed on the student loan; each month's interest depends on it.
+    /// What is still owed on the student loan. Each month's interest depends on it.
     loan_balance: Decimal,
 }
 
@@ -521,7 +584,7 @@ impl Builder {
     }
 
     /// One month of recurring household activity. `index` counts from the
-    /// first month of history; `first` is the first day of the month.
+    /// first month of history and `first` is the first day of the month.
     #[rustfmt::skip]
     fn month(&mut self, index: u32, first: NaiveDate) {
         let day = |day: u32| first.with_day(day).expect("only days up to the 28th are used");
@@ -558,14 +621,14 @@ impl Builder {
             Line::debit(HOUSEHOLD, household).memo("Cleaning supplies and kitchenware"),
         ]);
 
-        // Salary arrives net; the journal entry records gross pay and deductions.
+        // Salary arrives net. The journal entry records gross pay and deductions.
         let (salary, gross) = (reference("SALARY"), format!("Gross salary {}", first.format("%B")));
         self.post_split(EVERYDAY, day(25), eur(3240, 0), "ACME Oy", Some(&salary), vec![
             Line::credit(SALARY, eur(4650, 0)).memo(&gross),
             Line::debit(INCOME_TAX, eur(1162, 50)).memo("Withheld income tax"),
             Line::debit(PENSION, eur(247, 50)).memo("Employee pension contribution"),
         ]);
-        // The loan payment is fixed: interest on what is still owed, the rest pays it down.
+        // The loan payment is fixed. Interest takes its share and the rest pays the loan down.
         let (loan, payment) = (reference("LOAN 88-20417"), eur(210, 0));
         let interest = (self.loan_balance * Decimal::new(45, 4)).round_dp(2);
         self.post_split(EVERYDAY, day(28), -payment, "OP student loan", Some(&loan), vec![
@@ -626,7 +689,7 @@ impl Builder {
                 self.post(EVERYDAY, day(21), eur(120, 0), "Tori.fi bike sale", None, OTHER_INCOME);
             }
             3 => {
-                // An inflow on the card: a refund credited back to the expense account.
+                // An inflow on the card, which is a refund credited back to the expense account.
                 self.post(VISA, day(4), eur(42, 0), "Finnair refund", Some("AY1331"), TRAVEL);
                 // Booked by hand, with no bank transaction behind it.
                 self.journal(day(16), "Dinner with Aino, her half", None, vec![
@@ -645,7 +708,7 @@ impl Builder {
         let today = self.today;
         let ago = |days: u64| today - Days::new(days);
 
-        // A matching pair on two bank accounts: the composer suggests posting it as a transfer.
+        // A matching pair on two bank accounts. The composer suggests posting it as a transfer.
         self.pending(EVERYDAY, today, -eur(60, 0), "Otto. ATM withdrawal", None);
         self.pending(WALLET, today, eur(60, 0), "Withdrawal", None);
 
@@ -655,7 +718,7 @@ impl Builder {
         self.pending(EVERYDAY, ago(2), -eur(34, 99), "Clas Ohlson Kamppi", None);
         self.pending(EVERYDAY, ago(2), -eur(18, 20), "Alepa Töölö", None);
         self.pending(EVERYDAY, ago(3), -eur(12, 0), "R-kioski Rautatientori", None);
-        // A hotel deposit that was reversed: nothing to book, so both were dismissed.
+        // A hotel deposit that was reversed. There is nothing to book, so both were dismissed.
         let booking = Some("RES 55209");
         self.dismissed(EVERYDAY, ago(3), -eur(150, 0), "Scandic Hotels deposit", booking);
         self.dismissed(EVERYDAY, ago(3), eur(150, 0), "Scandic Hotels deposit reversal", booking);
@@ -757,8 +820,8 @@ impl Builder {
         );
     }
 
-    /// The journal line the app creates for a bank transaction: on the mapped
-    /// ledger account, debit for an inflow and credit for an outflow.
+    /// The journal line the app creates for a bank transaction. It is on the mapped
+    /// ledger account, a debit for an inflow and a credit for an outflow.
     fn bank_line(&self, bank_txn: usize) -> Line {
         let txn = &self.data.bank_transactions[bank_txn];
         let account = self
@@ -851,8 +914,8 @@ impl Builder {
         self.journal(date, description, reference, lines);
     }
 
-    /// Money moving between two of the household's bank accounts: one journal
-    /// transaction booking both bank transactions.
+    /// Money moving between two of the household's bank accounts, as one journal
+    /// transaction that books both bank transactions.
     fn transfer(
         &mut self,
         from: &'static str,
@@ -897,7 +960,7 @@ fn eur(euros: i64, cents: i64) -> Decimal {
     Decimal::new(euros * 100 + cents, 2)
 }
 
-/// A tiny xorshift generator: amounts vary from month to month but the dataset
+/// A tiny xorshift generator. Amounts vary from month to month but the dataset
 /// stays reproducible for a given day.
 struct Rng(u64);
 
@@ -1028,7 +1091,7 @@ mod tests {
                 data.bank_balance(bank_account) - ledger_balance(&data, ledger_account)
             };
 
-            // Nothing left to book: "Balanced".
+            // Nothing left to book, so the app shows "Balanced".
             assert_eq!(difference(NORDEA_SAVINGS), Decimal::ZERO, "{today}");
             // Explained by the transactions that are still pending or were dismissed.
             for bank_account in [EVERYDAY, WALLET] {
@@ -1046,7 +1109,7 @@ mod tests {
         }
     }
 
-    /// Money never runs out: asset accounts stay in credit at the end of every
+    /// Money never runs out. Asset accounts stay in credit at the end of every
     /// day, and the credit card is never overpaid.
     #[test]
     fn balances_stay_on_the_right_side_of_zero() {
@@ -1192,7 +1255,8 @@ mod tests {
             ] {
                 assert!(
                     data.bank_transaction_count(status) > 0,
-                    "{today}: no {status} transactions"
+                    "{today}: no {} transactions",
+                    status.as_str()
                 );
             }
             for account in &data.accounts {

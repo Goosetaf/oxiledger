@@ -41,52 +41,6 @@ curl -sSL http://dioxus.dev/install.sh | sh
 dx serve
 ```
 
-# Local setup and seed data
-
-`cargo`, `dx` and `sqlx` come from the Nix flake. If they are not on your PATH, run commands through `nix develop -c`, for example `nix develop -c cargo seed`.
-
-```sh
-cp .env.example .env
-docker compose up -d --wait   # PostgreSQL on DB_PORT (default 5432)
-cargo seed                    # applies migrations, then (re)creates the seeded users
-dx serve --platform web
-```
-
-Use a database of your own. If port 5432 is taken, another checkout is probably using it: set `DB_PORT` in `.env`, use the same port in `DATABASE_URL`, and only then start the database.
-
-The app is served on http://localhost:8080. Log in as `dev` with the password `dev-password`. `dev-empty` (same password) has no data and shows the empty states. "Seed data" in the README describes what `dev` owns and lists the URLs that cannot be reached by clicking.
-
-To call the API without a browser, log in once and reuse the cookie:
-
-```sh
-curl -c /tmp/oxiledger-cookies -H 'content-type: application/json' \
-  -d '{"req":{"username":"dev","password":"dev-password"}}' http://localhost:8080/api/auth/login
-curl -b /tmp/oxiledger-cookies http://localhost:8080/api/accounts
-```
-
-Run `cargo seed` again to get back to known data after testing something destructive. Accounts and bank accounts keep their ids and URLs, but sessions are dropped, so log in again.
-
-## Keeping the seed data complete
-
-The seed data is described in `src/server/seed/dataset.rs`, and `src/server/seed/mod.rs` writes it to the database. When a feature stores new data or adds a state worth seeing:
-
-1. Add rows for it to the dataset. A new table or column also needs its `INSERT` in `write_household`.
-2. Add or adjust a test in `dataset.rs` if the app enforces a rule on that data.
-3. Mention it under "Seed data" in the README.
-
-```sh
-cargo test --no-default-features --features seed
-```
-
-## Changing queries or migrations
-
-Builds check SQL against the files in `.sqlx` instead of the database (`SQLX_OFFLINE` in `.env`). After adding or changing a query or a migration, regenerate them with the database running:
-
-```sh
-sqlx migrate run
-cargo sqlx prepare --workspace -- --features server,seed
-```
-
 # Verifying feature builds
 
 When you change app code, verify both feature-specific targets still compile.
