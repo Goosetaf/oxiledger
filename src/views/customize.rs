@@ -1,11 +1,14 @@
 use crate::{
     components::{icon::Icon, nav::use_nav_settings},
-    navigation::{Destination, NavPreferences, SHORTCUT_SLOTS},
+    navigation::{Destination, NavPreferences},
 };
 use dioxus::prelude::*;
 
 const ICON_UP: &str = "M6 15l6-6 6 6";
 const ICON_DOWN: &str = "M6 9l6 6 6-6";
+const ICON_SHOWN: &str =
+    "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z";
+const ICON_HIDDEN: &str = "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM4 4l16 16";
 
 #[component]
 pub fn Customize() -> Element {
@@ -13,7 +16,6 @@ pub fn Customize() -> Element {
     let preferences = settings.preferences();
     let shown = preferences.shown();
     let shortcuts = preferences.shortcuts();
-    let hidden = preferences.hidden();
 
     // Applies one edit to a copy of the preferences and hands it to the shell,
     // which shows it at once and saves it.
@@ -27,38 +29,39 @@ pub fn Customize() -> Element {
         div { class: "app-container",
             div { class: "page-stack",
                 div { class: "section-header",
-                    div {
-                        h1 { class: "section-title", "Customize" }
-                        p { class: "section-subtitle",
-                            "Arrange OxiLedger around the parts of your economy you keep track of."
-                        }
-                    }
+                    h1 { class: "section-title", "Customize" }
                 }
 
                 if let Some(err) = settings.save_error() {
-                    div { class: "message message-error",
-                        "That change could not be saved, so it was undone: {err}. Make it again to retry."
-                    }
+                    div { class: "message message-error", "Not saved, so the change was undone: {err}" }
                 }
 
-                section { class: "section-card stack-lg",
-                    div {
+                section { class: "section-card",
+                    div { class: "pref-header",
                         h2 { class: "section-title", "Navigation" }
-                        p { class: "section-subtitle",
-                            "Put what you use most first. This is the order of the sidebar and the phone menu, and the first {SHORTCUT_SLOTS} sit in the phone tab bar."
+                        button {
+                            class: "btn btn-secondary btn-sm",
+                            r#type: "button",
+                            "aria-label": "Reset navigation",
+                            disabled: preferences == NavPreferences::default(),
+                            onclick: move |_| settings.update(NavPreferences::default()),
+                            "Reset"
                         }
+                    }
+
+                    // The rows that make it into the phone tab bar are drawn as one
+                    // block carrying the tab bar's own mark; the label names it once.
+                    if !shortcuts.is_empty() {
+                        p { class: "pref-caption", "Phone tab bar" }
                     }
 
                     ol { class: "pref-list",
                         for (index , destination) in shown.iter().copied().enumerate() {
-                            li { key: "{destination:?}", class: "pref-row",
+                            li {
+                                key: "{destination:?}",
+                                class: if shortcuts.contains(&destination) { "pref-row is-shortcut" } else { "pref-row" },
                                 Icon { path: destination.info().icon }
-                                div { class: "pref-label",
-                                    span { class: "label-strong", "{destination.info().label}" }
-                                    if shortcuts.contains(&destination) {
-                                        span { class: "tiny-text", "Phone shortcut" }
-                                    }
-                                }
+                                span { class: "pref-label", "{destination.info().label}" }
                                 div { class: "pref-actions",
                                     button {
                                         class: "btn btn-secondary btn-sm btn-icon",
@@ -77,57 +80,32 @@ pub fn Customize() -> Element {
                                         Icon { path: ICON_DOWN }
                                     }
                                     button {
-                                        class: "btn btn-secondary btn-sm",
+                                        class: "btn btn-secondary btn-sm btn-icon",
                                         r#type: "button",
                                         "aria-label": "Hide {destination.info().label}",
                                         onclick: move |_| edit(NavPreferences::hide, destination),
-                                        "Hide"
+                                        Icon { path: ICON_SHOWN }
                                     }
                                 }
                             }
                         }
-                    }
-
-                    if !hidden.is_empty() {
-                        div {
-                            h3 { class: "section-title", "Hidden" }
-                            p { class: "section-subtitle",
-                                "Left out of the sidebar and the phone menu. Their pages still open from links."
-                            }
-                        }
-
-                        ul { class: "pref-list",
-                            for destination in hidden.iter().copied() {
-                                li {
-                                    key: "{destination:?}",
-                                    class: "pref-row is-hidden",
-                                    Icon { path: destination.info().icon }
-                                    div { class: "pref-label",
-                                        span { "{destination.info().label}" }
-                                    }
-                                    div { class: "pref-actions",
-                                        button {
-                                            class: "btn btn-secondary btn-sm",
-                                            r#type: "button",
-                                            "aria-label": "Show {destination.info().label}",
-                                            onclick: move |_| edit(NavPreferences::show, destination),
-                                            "Show"
-                                        }
+                        for destination in preferences.hidden().iter().copied() {
+                            li {
+                                key: "{destination:?}",
+                                class: "pref-row is-hidden",
+                                Icon { path: destination.info().icon }
+                                span { class: "pref-label", "{destination.info().label}" }
+                                div { class: "pref-actions",
+                                    button {
+                                        class: "btn btn-secondary btn-sm btn-icon",
+                                        r#type: "button",
+                                        "aria-label": "Show {destination.info().label}",
+                                        onclick: move |_| edit(NavPreferences::show, destination),
+                                        Icon { path: ICON_HIDDEN }
                                     }
                                 }
                             }
                         }
-                    }
-
-                    div { class: "actions-row",
-                        button {
-                            class: "btn btn-secondary",
-                            r#type: "button",
-                            disabled: preferences == NavPreferences::default(),
-                            onclick: move |_| settings.update(NavPreferences::default()),
-                            "Reset navigation"
-                        }
-                        span { class: "field-note", "Changes save as you make them." }
                     }
                 }
             }

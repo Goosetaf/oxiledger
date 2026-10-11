@@ -16,7 +16,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use strum::VariantArray;
 
 /// How many destinations fit beside "+" and "Menu" in the phone tab bar.
-pub const SHORTCUT_SLOTS: usize = 3;
+const SHORTCUT_SLOTS: usize = 3;
 
 /// A top-level place in the app. The variants are in the order a new user sees
 /// them.

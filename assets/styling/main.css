@@ -1206,51 +1206,94 @@ table {
   height: 20px;
 }
 
+.pref-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.pref-caption {
+  margin: 0 0 6px 2px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
 .pref-list {
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
 }
 
 .pref-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px 10px 14px;
+  min-height: 52px;
+  padding: 6px 8px 6px 14px;
 }
 
 .pref-row + .pref-row {
   border-top: 1px solid var(--line);
 }
 
-.pref-row > .icon,
-.pref-row.is-hidden .pref-label {
+/* The destinations in the phone tab bar read as one block and carry the tab
+   bar's own mark, so where the bar ends is drawn rather than described. */
+.pref-row.is-shortcut {
+  background: rgba(249, 115, 22, 0.07);
+  box-shadow: inset 2px 0 0 #f97316;
+}
+
+.pref-row.is-shortcut:first-child {
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+}
+
+.pref-row.is-shortcut:not(:has(+ .is-shortcut)) {
+  border-bottom-right-radius: var(--radius-md);
+  border-bottom-left-radius: var(--radius-md);
+}
+
+.pref-row.is-shortcut + .pref-row:not(.is-shortcut) {
+  margin-top: 10px;
+  border-top: 0;
+}
+
+.pref-row > .icon {
   color: var(--text-muted);
 }
 
-.pref-label {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-width: 0;
+.pref-row.is-shortcut > .icon {
+  color: #fb923c;
 }
 
-.pref-label .tiny-text {
-  margin-top: 2px;
-  white-space: nowrap;
+.pref-row.is-hidden > .icon,
+.pref-row.is-hidden > .pref-label {
+  opacity: 0.4;
+}
+
+.pref-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .pref-actions {
   display: flex;
   flex: 0 0 auto;
-  gap: 6px;
+  gap: 2px;
 }
 
-.pref-actions .btn:not(.btn-icon) {
-  padding-right: 10px;
-  padding-left: 10px;
+/* Row controls are bare icons, so a list of them does not turn into a grid of boxes. */
+.pref-actions .btn-icon {
+  background: none;
+  border-color: transparent;
+}
+
+.pref-actions .btn-icon .icon {
+  width: 18px;
+  height: 18px;
 }
 
 .btn-icon {
@@ -1576,12 +1619,9 @@ table {
 
   .pref-row {
     gap: 10px;
-    padding: 10px 10px 10px 12px;
+    padding-right: 6px;
   }
 
-  .pref-actions {
-    gap: 4px;
-  }
 
   /* iOS gives date inputs an intrinsic width and centres the value. */
   input[type="date"].input {
