@@ -91,7 +91,6 @@ enum Route {
 }
 
 impl Route {
-    /// Top bar title. Every route has to name one.
     pub fn title(&self) -> &'static str {
         match self {
             Route::Login {} => "Sign In",
