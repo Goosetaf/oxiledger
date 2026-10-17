@@ -296,12 +296,12 @@ pub fn TransactionForm(
 
                             Button {
                                 r#type: "button",
-                                class: "btn btn-secondary btn-sm".to_string(),
+                                class: "btn btn-secondary btn-sm entry-add".to_string(),
                                 onclick: handle_add_row,
                                 "+ Add line"
                             }
 
-                            table { class: "data-table",
+                            table { class: "data-table entry-table",
                                 thead {
                                     tr {
                                         th { "Account" }
@@ -315,10 +315,13 @@ pub fn TransactionForm(
                                 for (index , row) in rows.iter().cloned().enumerate() {
                                     tr { class: if row.is_locked() { "entry-row-locked" } else { "" },
                                         td {
+                                            class: "entry-account",
+                                            "data-label": "Account",
                                             select {
                                                 class: "select",
                                                 r#autocomplete: "off",
                                                 disabled: row.is_locked(),
+                                                aria_label: "Account",
                                                 onchange: move |e| {
                                                     if !entry_rows.read()[index].is_locked() {
                                                         entry_rows.write()[index].account_id_str = e.value();
@@ -341,6 +344,8 @@ pub fn TransactionForm(
                                         }
 
                                         td {
+                                            class: "entry-bank",
+                                            "data-label": "Bank transaction",
                                             {
                                                 let available_bank_txns = available_bank_txns_by_row[index].clone();
                                                 let options = available_bank_txns.clone();
@@ -356,6 +361,7 @@ pub fn TransactionForm(
                                                     } else {
                                                         select {
                                                             class: "select",
+                                                            aria_label: "Bank transaction",
                                                             r#autocomplete: "off",
                                                             onchange: move |e| {
                                                                 let value = e.value();
@@ -401,11 +407,14 @@ pub fn TransactionForm(
                                         }
 
                                         td {
+                                            class: "entry-memo",
+                                            "data-label": "Memo",
                                             input {
                                                 class: "input",
                                                 r#type: "text",
                                                 r#autocomplete: "off",
                                                 placeholder: "Optional note",
+                                                aria_label: "Memo",
                                                 value: row.memo.clone(),
                                                 readonly: row.is_locked(),
                                                 disabled: row.is_locked(),
@@ -418,6 +427,8 @@ pub fn TransactionForm(
                                         }
 
                                         td {
+                                            class: "entry-debit",
+                                            "data-label": "Debit",
                                             input {
                                                 class: "input",
                                                 r#type: "text",
@@ -425,6 +436,7 @@ pub fn TransactionForm(
                                                 inputmode: "decimal",
                                                 placeholder: "0.00",
                                                 value: row.debit_amount_str.clone(),
+                                                aria_label: "Debit",
                                                 readonly: row.is_locked(),
                                                 disabled: row.is_locked(),
                                                 oninput: move |e| {
@@ -442,6 +454,8 @@ pub fn TransactionForm(
                                         }
 
                                         td {
+                                            class: "entry-credit",
+                                            "data-label": "Credit",
                                             input {
                                                 class: "input",
                                                 r#type: "text",
@@ -449,6 +463,7 @@ pub fn TransactionForm(
                                                 inputmode: "decimal",
                                                 placeholder: "0.00",
                                                 value: row.credit_amount_str.clone(),
+                                                aria_label: "Credit",
                                                 readonly: row.is_locked(),
                                                 disabled: row.is_locked(),
                                                 oninput: move |e| {
@@ -465,7 +480,7 @@ pub fn TransactionForm(
                                             }
                                         }
 
-                                        td { class: "align-end",
+                                        td { class: "align-end entry-remove",
                                             Button {
                                                 r#type: "button",
                                                 class: if row.is_locked() { "btn btn-warning btn-sm".to_string() } else { "btn btn-danger btn-sm".to_string() },

@@ -186,7 +186,7 @@ pub fn BankAccountEdit(id: Uuid) -> Element {
             div { class: "page-stack",
                 div { class: "section-header",
                     div {
-                        h2 { class: "section-title", "Edit bank account" }
+                        h1 { class: "section-title", "Edit bank account" }
                         p { class: "section-subtitle",
                             "Update the imported bank account details and linked ledger account."
                         }

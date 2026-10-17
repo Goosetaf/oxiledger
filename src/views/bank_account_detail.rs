@@ -684,7 +684,7 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                             }
                         }
                         Link {
-                            class: "btn btn-secondary",
+                            class: "btn btn-secondary hide-on-mobile",
                             to: crate::Route::BankAccounts {},
                             "Back"
                         }
@@ -762,7 +762,9 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                         }
                     }
                     if show_add_form() {
-                        div { class: "glass-card", style: "padding: 1rem;",
+                        div {
+                            class: "glass-card stack-lg",
+                            style: "padding: 1rem;",
                             div { class: "form-grid two-up",
                                 div { class: "field-block",
                                     label {
@@ -848,7 +850,7 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                 }
 
                 // Filter tabs.
-                div { class: "actions-row",
+                div { class: "actions-row filter-tabs",
                     Button {
                         class: if filter == "pending" { "btn btn-primary btn-sm".to_string() } else { "btn btn-secondary btn-sm".to_string() },
                         onclick: move |_| status_filter.set("pending"),
@@ -892,7 +894,7 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                         }
                     }
                 } else {
-                    table { class: "glass-card data-table",
+                    table { class: "glass-card data-table stack-rows",
                         thead {
                             tr {
                                 th { "Date" }
@@ -904,8 +906,8 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                         tbody {
                             for txn in filtered_txns {
                                 tr {
-                                    td { class: "mono muted", "{txn.date}" }
-                                    td {
+                                    td { class: "mono muted m-meta", "{txn.date}" }
+                                    td { class: "m-title",
                                         div { class: "stack-sm",
                                             span { class: "label-strong", "{txn.description}" }
                                             if let Some(ref r) = txn.reference {
@@ -915,12 +917,12 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                             }
                                         }
                                     }
-                                    td { class: "col-right mono",
+                                    td { class: "col-right mono m-value",
                                         span { class: if txn.is_inflow() { "text-positive" } else { "text-negative" },
                                             "{txn.amount} {txn.currency}"
                                         }
                                     }
-                                    td { class: "col-right",
+                                    td { class: "col-right m-actions",
                                         div { class: "actions-row justify-end",
                                             if txn.status == "pending" {
                                                 Link {

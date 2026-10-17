@@ -575,7 +575,7 @@ pub fn NewTransactionFromBank(bank_txn_id: Uuid) -> Element {
     rsx! {
         div { class: "page-stack",
             for suggestion in transfer_suggestions {
-                div { class: "message message-info",
+                div { class: "app-container message message-info",
                     div { class: "actions-row",
                         div { class: "stack-sm",
                             strong { "Possible internal transfer" }
