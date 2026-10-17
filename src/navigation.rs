@@ -26,7 +26,6 @@ pub enum Destination {
     BankAccounts,
 }
 
-/// What the navigation shows for a [`Destination`].
 pub struct DestinationInfo {
     pub label: &'static str,
     /// Short enough to sit under an icon in the phone tab bar.
@@ -36,7 +35,6 @@ pub struct DestinationInfo {
 }
 
 impl Destination {
-    /// Every destination, in the order a new user sees them.
     pub const ALL: &'static [Destination] = Self::VARIANTS;
 
     pub fn info(self) -> DestinationInfo {
@@ -144,7 +142,6 @@ impl NavPreferences {
         &self.hidden
     }
 
-    /// Swaps a shown destination with the one before it.
     pub fn move_earlier(&mut self, destination: Destination) {
         if let Some(index) = self.shown.iter().position(|d| *d == destination) {
             if index > 0 {
@@ -153,7 +150,6 @@ impl NavPreferences {
         }
     }
 
-    /// Swaps a shown destination with the one after it.
     pub fn move_later(&mut self, destination: Destination) {
         if let Some(index) = self.shown.iter().position(|d| *d == destination) {
             if index + 1 < self.shown.len() {

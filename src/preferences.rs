@@ -48,7 +48,6 @@ async fn save_preferences(preferences: Preferences) -> Result<(), ServerFnError>
     Ok(())
 }
 
-/// The signed-in user's preferences, shared by everything that shows or edits them.
 #[derive(Clone, Copy)]
 pub struct PreferencesStore {
     current: Signal<Preferences>,
