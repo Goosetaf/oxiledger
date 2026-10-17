@@ -112,13 +112,18 @@ pub fn Dashboard() -> Element {
                         div { class: "empty-state",
                             div { class: "empty-icon", "+" }
                             h3 { class: "section-title", "No accounts yet" }
-                            p { class: "supporting-text",
-                                "Create your first account to start seeing balances here."
-                            }
-                            Link {
-                                to: crate::Route::Accounts {},
-                                class: "btn btn-primary",
-                                "Create an account"
+                            p { class: "supporting-text", "Add a starter set or create your own." }
+                            div { class: "status-actions",
+                                Link {
+                                    to: crate::Route::Setup {},
+                                    class: "btn btn-primary",
+                                    "Add starter accounts"
+                                }
+                                Link {
+                                    to: crate::Route::NewAccount {},
+                                    class: "btn btn-secondary",
+                                    "New account"
+                                }
                             }
                         }
                     } else {

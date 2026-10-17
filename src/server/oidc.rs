@@ -240,7 +240,8 @@ pub async fn handle_start(
 /// `GET /auth/oidc/callback?code=...&state=...`
 ///
 /// Validates the CSRF state, exchanges the authorization code for tokens, extracts
-/// identity claims, upserts the user row, creates a session, and redirects to `/`.
+/// identity claims, upserts the user row, creates a session, and redirects to `/`,
+/// or to `/setup` for a user signing in for the first time.
 pub async fn handle_callback(
     axum::extract::Query(params): axum::extract::Query<CallbackParams>,
     axum::extract::Extension(pool): axum::extract::Extension<PgPool>,
@@ -377,14 +378,16 @@ pub async fn handle_callback(
     // 5. Upsert the user row.
     //    On conflict (same provider + subject) we update the email so it stays fresh.
     //    The UNIQUE constraint on (oidc_provider, oidc_subject) set in migration 0002
-    //    ensures we never create a duplicate identity.
-    let user_id: Uuid = match sqlx::query_scalar!(
+    //    ensures we never create a duplicate identity. Both timestamps default to
+    //    the same NOW() on insert and the update moves `updated_at`, so they are
+    //    equal only for a user created just now.
+    let (user_id, is_new): (Uuid, bool) = match sqlx::query!(
         r#"
         INSERT INTO users (username, email, oidc_provider, oidc_subject)
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (oidc_provider, oidc_subject)
             DO UPDATE SET email = EXCLUDED.email, updated_at = NOW()
-        RETURNING id
+        RETURNING id, created_at = updated_at AS "is_new!"
         "#,
         username,
         email,
@@ -394,19 +397,19 @@ pub async fn handle_callback(
     .fetch_one(&pool)
     .await
     {
-        Ok(id) => id,
+        Ok(row) => (row.id, row.is_new),
         Err(e) => {
             // The username might collide with an existing local user.
             // Re-try with a suffixed username derived from the subject.
             eprintln!("[oidc] User upsert failed (possibly duplicate username): {e}");
             let fallback_username = format!("{username}_{}", &subject[..8.min(subject.len())]);
-            match sqlx::query_scalar!(
+            match sqlx::query!(
                 r#"
                 INSERT INTO users (username, email, oidc_provider, oidc_subject)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (oidc_provider, oidc_subject)
                     DO UPDATE SET email = EXCLUDED.email, updated_at = NOW()
-                RETURNING id
+                RETURNING id, created_at = updated_at AS "is_new!"
                 "#,
                 fallback_username,
                 email,
@@ -416,7 +419,7 @@ pub async fn handle_callback(
             .fetch_one(&pool)
             .await
             {
-                Ok(id) => id,
+                Ok(row) => (row.id, row.is_new),
                 Err(e2) => {
                     eprintln!("[oidc] Fallback upsert also failed: {e2}");
                     return (
@@ -448,7 +451,8 @@ pub async fn handle_callback(
     cookie.set_same_site(tower_cookies::cookie::SameSite::Lax); // Lax required for cross-site redirect
     cookies.add(cookie);
 
-    axum::response::Redirect::temporary("/").into_response()
+    let destination = if is_new { "/setup" } else { "/" };
+    axum::response::Redirect::temporary(destination).into_response()
 }
 
 /// Query parameters received on the OIDC callback URL.

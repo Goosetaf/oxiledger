@@ -25,6 +25,7 @@ use views::{
     not_found::NotFound,
     oidc::{OidcCallback, OidcLogin},
     register::Register,
+    setup::Setup,
     transaction_edit::EditTransaction,
     transaction_new::{NewTransaction, NewTransactionFromBank},
     transactions::Transactions,
@@ -50,6 +51,9 @@ enum Route {
         OidcLogin {},
         #[route("/auth/oidc/callback")]
         OidcCallback {},
+        // First-run setup wizard — full-page, checks the session itself
+        #[route("/setup")]
+        Setup {},
         // Authenticated routes — wrapped in Navbar layout
         #[layout(Navbar)]
             #[route("/")]
@@ -77,8 +81,8 @@ enum Route {
             BankAccountDetail { id: Uuid },
             #[route("/bank-accounts/:id/edit")]
             BankAccountEdit { id: Uuid },
-            #[route("/bank-accounts/connect?:source_id")]
-            BankConnect { source_id: Option<Uuid> },
+            #[route("/bank-accounts/connect?:source_id&:provider")]
+            BankConnect { source_id: Option<Uuid>, provider: Option<String> },
             #[route("/bank-accounts/connect/map?:connection_id")]
             BankAccountMap { connection_id: Uuid },
         #[route("/:..segments")]

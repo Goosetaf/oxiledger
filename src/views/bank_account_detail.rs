@@ -645,6 +645,7 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
                                 class: "btn btn-secondary",
                                 to: crate::Route::BankConnect {
                                     source_id: Some(id),
+                                    provider: None,
                                 },
                                 "Connect to bank"
                             }
