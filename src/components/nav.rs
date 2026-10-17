@@ -28,7 +28,6 @@ async fn get_current_user() -> Result<Option<CurrentUser>, ServerFnError> {
 
                 return Ok(row.map(|r| CurrentUser {
                     username: r.username,
-                    // Unreadable preferences fall back to the defaults
                     preferences: serde_json::from_value(r.preferences).unwrap_or_default(),
                 }));
             }
@@ -67,27 +66,19 @@ async fn logout_action() -> Result<(), ServerFnError> {
     Ok(())
 }
 
-/// Closes the phone menu. Writes only when it is open, so the many clicks that
-/// pass through here on a wide screen do not re-render the shell.
 fn close_menu(mut menu_open: Signal<bool>) {
     if *menu_open.peek() {
         menu_open.set(false);
     }
 }
 
-/// Pages are titled after their destination unless they need something more
-/// specific, so a new destination gets a title without being listed here.
 fn topbar_title(route: &Route) -> &'static str {
-    match route {
-        Route::Dashboard {} => "Dashboard Overview",
-        Route::BankAccountDetail { .. } => "Bank Account",
-        Route::BankConnect { .. } => "Connect a Bank",
-        Route::BankAccountMap { .. } => "Map Bank Accounts",
-        Route::Customize {} => "Customize",
-        _ => route
-            .destination()
-            .map_or("OxiLedger", |destination| destination.info().label),
+    if matches!(route, Route::Customize {}) {
+        return "Customize";
     }
+    route
+        .destination()
+        .map_or("OxiLedger", |destination| destination.info().label)
 }
 
 /// Layout for signed-in pages: checks the session, then hands over to [`Shell`].
