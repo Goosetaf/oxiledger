@@ -29,6 +29,7 @@
   --primary-container: #b7410e;
   --on-primary:        #5c1a00;
   --on-primary-container: #ffe2d9;
+  --brand:             #f97316;
 
   /* === Secondary (Cyan) === */
   --secondary:         #bdf4ff;
@@ -508,6 +509,7 @@ table {
 .editor-shell,
 .empty-state,
 .auth-panel,
+.setup-card,
 .entry-row {
   position: relative;
   background: var(--glass-bg);
@@ -523,6 +525,7 @@ table {
 .editor-shell::before,
 .empty-state::before,
 .auth-panel::before,
+.setup-card::before,
 .entry-row::before {
   content: "";
   position: absolute;
@@ -1198,6 +1201,641 @@ table {
 .transaction-entry-table tbody tr:hover,
 .transaction-entry-table thead tr:hover {
   background: transparent !important;
+}
+
+/* ============================================================
+   ACCESSIBILITY HELPERS
+   ============================================================ */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================
+   CHECKBOX ROWS
+   ============================================================ */
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.check-row input[type="checkbox"],
+.account-option input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--primary-container);
+}
+
+.check-row input:focus-visible,
+.account-option input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.check-row-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.check-row-copy .tiny-text {
+  margin: 0;
+}
+
+/* ============================================================
+   SETUP WIZARD
+   ============================================================ */
+
+.setup-shell {
+  width: min(calc(100% - 32px), 860px);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 32px 0 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.setup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.setup-steps {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 2px solid var(--line-soft);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.setup-step.is-done {
+  border-top-color: rgba(183, 65, 14, 0.6);
+}
+
+.setup-step.is-current {
+  border-top-color: var(--brand);
+  color: var(--text);
+}
+
+.setup-step-index {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.75rem;
+}
+
+.setup-step.is-done .setup-step-index,
+.setup-step.is-current .setup-step-index {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.setup-card {
+  --setup-pad: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: var(--setup-pad);
+  /* Unclipped, so the action row can stick to the bottom of the window. */
+  overflow: visible;
+}
+
+.setup-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setup-title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  outline: none;
+}
+
+.setup-intro .supporting-text {
+  max-width: 76ch;
+  line-height: 1.55;
+}
+
+.setup-card > .tiny-text {
+  margin: 0;
+}
+
+
+.setup-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setup-fieldset > legend {
+  padding: 0;
+  margin-bottom: 10px;
+}
+
+/* A set of options to pick one from, each a radio with a title and a line of
+   explanation. An option can hold extra fields that belong to it. */
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.choice-grid.is-stacked {
+  grid-template-columns: 1fr;
+}
+
+.choice {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.choice:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.choice:has(.choice-head input:checked) {
+  border-color: var(--brand);
+  background: rgba(249, 115, 22, 0.07);
+}
+
+.choice:has(.choice-head input:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.choice-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.choice-head input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  display: grid;
+  place-content: center;
+  border: 1.5px solid var(--text-muted);
+  border-radius: 50%;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.choice-head input::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand);
+  transform: scale(0);
+  transition: transform 120ms ease;
+}
+
+.choice-head input:checked {
+  border-color: var(--brand);
+}
+
+.choice-head input:checked::before {
+  transform: scale(1);
+}
+
+.choice-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.choice-title {
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.choice-copy .tiny-text,
+.choice-extra .tiny-text {
+  margin: 0;
+}
+
+/* Lines up with the option's text, past the radio. */
+.choice-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 2px 16px 16px 46px;
+}
+
+/* The accounts setup will create, set like a page of a ledger. */
+.ledger-sheet {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: rgba(30, 33, 39, 0.11);
+}
+
+.ledger-sheet-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.ledger-sheet-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.ledger-sheet-count {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.ledger-sheet-note {
+  margin: 0;
+  padding: 12px 16px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+/* Where money sits on the left, the categories it moves through on the right. */
+.ledger-sides {
+  display: flex;
+}
+
+.ledger-side {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 16px 14px;
+}
+
+.ledger-side.is-wide {
+  flex-grow: 2;
+}
+
+.ledger-side + .ledger-side {
+  border-left: 1px solid var(--line);
+}
+
+.ledger-side.is-wide .ledger-rows {
+  columns: 2;
+  column-gap: 24px;
+}
+
+.ledger-group-title {
+  margin: 0;
+  padding: 12px 0 6px;
+  color: var(--text-muted);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ledger-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ledger-row {
+  display: grid;
+  grid-template-columns: 4ch minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 12px;
+  margin: 0 -6px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.86rem;
+  line-height: 1.4;
+  break-inside: avoid;
+}
+
+/* Accounts a new choice has just added are picked out for a moment. */
+.ledger-row.is-added {
+  animation: ledger-row-in 1100ms ease-out;
+}
+
+.ledger-row .mono {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.ledger-row:not(:has(.mono)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@keyframes ledger-row-in {
+  from {
+    background-color: rgba(249, 115, 22, 0.26);
+  }
+
+  to {
+    background-color: transparent;
+  }
+}
+
+.setup-done-mark {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--positive-soft);
+  color: var(--positive);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.account-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.account-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.account-option input {
+  margin: 0;
+}
+
+.account-option:not(.is-disabled):has(input:checked) {
+  border-color: rgba(249, 115, 22, 0.55);
+  background: rgba(249, 115, 22, 0.08);
+}
+
+.account-option.is-disabled {
+  cursor: default;
+  color: var(--text-muted);
+  border-style: dashed;
+  background: transparent;
+}
+
+.account-option .tiny-text {
+  margin: 0;
+  font-size: 0.72rem;
+}
+
+.setup-summary {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.review-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+}
+
+.review-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 16px;
+  padding: 14px 16px;
+}
+
+.review-row + .review-row {
+  border-top: 1px solid var(--line);
+}
+
+.review-row dt {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.review-row dd {
+  margin: 0;
+}
+
+.setup-actions {
+  position: sticky;
+  /* One pixel past the edge while pinned, which is how the page can tell. */
+  bottom: -1px;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  /* Out to the card's edges, leaving its hairline border showing. */
+  margin: 0 calc(1px - var(--setup-pad)) calc(1px - var(--setup-pad));
+  padding: 16px calc(var(--setup-pad) - 1px) 17px;
+  /* The card's own colour, made solid so content can pass underneath. */
+  background: linear-gradient(var(--glass-bg), var(--glass-bg)), var(--bg);
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+
+/* While the row is pinned over more of the page, the content above fades
+   into it and a marker says there is more below. */
+.setup-actions::before {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 1px);
+  left: 0;
+  height: 56px;
+  background: inherit;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000);
+  mask-image: linear-gradient(to bottom, transparent, #000);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.setup-actions[data-pinned="true"]::before {
+  opacity: 1;
+}
+
+.setup-more {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-right: auto;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.setup-actions[data-pinned="true"] .setup-more {
+  display: inline-flex;
+}
+
+/* A down chevron that nudges a few times when it appears. */
+.setup-more::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  animation: setup-more-nudge 1400ms ease-in-out 3;
+}
+
+@keyframes setup-more-nudge {
+  0%,
+  100% {
+    transform: translateY(-3px) rotate(45deg);
+  }
+
+  50% {
+    transform: translateY(1px) rotate(45deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice,
+  .choice-head input,
+  .choice-head input::before,
+  .setup-actions::before {
+    transition: none;
+  }
+
+  .ledger-row.is-added,
+  .setup-more::before {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .setup-card {
+    --setup-pad: 16px;
+    padding-top: 20px;
+  }
+
+  .setup-step-label {
+    display: none;
+  }
+
+  .setup-step {
+    justify-content: center;
+  }
+
+  .review-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .choice-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Room for the buttons: the marker keeps its chevron and drops its words. */
+  .setup-more {
+    gap: 0;
+    font-size: 0;
+  }
+
+  .choice-extra {
+    padding-left: 16px;
+  }
+
+  /* No room for columns of codes: each group becomes a line of names. */
+  .ledger-sides {
+    flex-direction: column;
+  }
+
+  .ledger-side + .ledger-side {
+    padding-top: 0;
+    border-left: 0;
+  }
+
+  .ledger-side:has(+ .ledger-side) {
+    padding-bottom: 0;
+  }
+
+  .ledger-side.is-wide .ledger-rows {
+    columns: 1;
+  }
+
+  .ledger-row {
+    display: inline;
+    margin: 0;
+    padding: 0;
+  }
+
+  .ledger-row.is-added {
+    animation: none;
+  }
+
+  .ledger-row .mono {
+    display: none;
+  }
+
+  .ledger-row:not(:last-child)::after {
+    content: ", ";
+  }
+
 }
 
 /* ============================================================

@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT name, account_type AS \"account_type: AccountType\"\n               FROM accounts\n               WHERE user_id = $1\n               ORDER BY name",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_type: AccountType",
+        "type_info": {
+          "Custom": {
+            "name": "account_type",
+            "kind": {
+              "Enum": [
+                "Asset",
+                "Liability",
+                "Equity",
+                "Revenue",
+                "Expense"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "22a8e86ab794d1f29e739d5783beefe564230a4f80fb8f23679a550992e18a44"
+}

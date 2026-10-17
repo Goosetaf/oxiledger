@@ -153,7 +153,7 @@ pub fn Register() -> Element {
 
             match register_action(req).await {
                 Ok(()) => {
-                    let _ = nav.push(crate::Route::Dashboard {});
+                    let _ = nav.push(crate::Route::Setup {});
                 }
                 Err(e) => {
                     error_msg.set(Some(e.to_string()));
