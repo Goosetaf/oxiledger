@@ -134,10 +134,15 @@ mod tests {
     #[test]
     fn what_is_saved_is_read_back_unchanged() {
         let mut preferences = Preferences::default();
-        preferences.navigation.move_later(crate::navigation::Destination::Dashboard);
+        preferences
+            .navigation
+            .move_later(crate::navigation::Destination::Dashboard);
 
         let saved = serde_json::to_value(&preferences).unwrap();
 
-        assert_eq!(serde_json::from_value::<Preferences>(saved).unwrap(), preferences);
+        assert_eq!(
+            serde_json::from_value::<Preferences>(saved).unwrap(),
+            preferences
+        );
     }
 }

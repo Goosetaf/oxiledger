@@ -33,32 +33,40 @@ impl Destination {
             Destination::Dashboard => DestinationInfo {
                 label: "Dashboard",
                 short_label: "Dashboard",
-                icon: || rsx! {
-                    Icon { class: "icon", icon: LdLayoutDashboard }
+                icon: || {
+                    rsx! {
+                        Icon { class: "icon", icon: LdLayoutDashboard }
+                    }
                 },
                 route: Route::Dashboard {},
             },
             Destination::Transactions => DestinationInfo {
                 label: "Transactions",
                 short_label: "Transactions",
-                icon: || rsx! {
-                    Icon { class: "icon", icon: LdArrowLeftRight }
+                icon: || {
+                    rsx! {
+                        Icon { class: "icon", icon: LdArrowLeftRight }
+                    }
                 },
                 route: Route::Transactions {},
             },
             Destination::Accounts => DestinationInfo {
                 label: "Accounts",
                 short_label: "Accounts",
-                icon: || rsx! {
-                    Icon { class: "icon", icon: LdLayers }
+                icon: || {
+                    rsx! {
+                        Icon { class: "icon", icon: LdLayers }
+                    }
                 },
                 route: Route::Accounts {},
             },
             Destination::BankAccounts => DestinationInfo {
                 label: "Bank Accounts",
                 short_label: "Banks",
-                icon: || rsx! {
-                    Icon { class: "icon", icon: LdLandmark }
+                icon: || {
+                    rsx! {
+                        Icon { class: "icon", icon: LdLandmark }
+                    }
                 },
                 route: Route::BankAccounts {},
             },
@@ -106,7 +114,11 @@ impl Default for NavPreferences {
         Self {
             shown: Destination::ALL.to_vec(),
             hidden: Vec::new(),
-            shortcuts: Destination::ALL.iter().copied().take(SHORTCUT_SLOTS).collect(),
+            shortcuts: Destination::ALL
+                .iter()
+                .copied()
+                .take(SHORTCUT_SLOTS)
+                .collect(),
         }
     }
 }
@@ -202,7 +214,11 @@ impl From<StoredNavPreferences> for NavPreferences {
         }
 
         let mut shown = Vec::new();
-        for destination in stored.shown.into_iter().chain(Destination::ALL.iter().copied()) {
+        for destination in stored
+            .shown
+            .into_iter()
+            .chain(Destination::ALL.iter().copied())
+        {
             if !shown.contains(&destination) && !hidden.contains(&destination) {
                 shown.push(destination);
             }
@@ -428,7 +444,10 @@ mod tests {
     fn preferences_saved_before_shortcuts_existed_get_the_first_shown() {
         let preferences = read(json!({ "shown": ["bank_accounts", "accounts"] }));
 
-        assert_eq!(preferences.shortcuts(), &preferences.shown()[..SHORTCUT_SLOTS]);
+        assert_eq!(
+            preferences.shortcuts(),
+            &preferences.shown()[..SHORTCUT_SLOTS]
+        );
         assert_eq!(preferences.shortcuts()[0], BankAccounts);
     }
 
