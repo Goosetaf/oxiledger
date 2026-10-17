@@ -1,15 +1,12 @@
 use crate::{
-    components::{icon::Icon, nav::use_nav_settings},
+    components::nav::use_nav_settings,
     navigation::{Destination, NavPreferences, SHORTCUT_SLOTS},
 };
 use dioxus::prelude::*;
-
-const ICON_UP: &str = "M6 15l6-6 6 6";
-const ICON_DOWN: &str = "M6 9l6 6 6-6";
-const ICON_SHOWN: &str =
-    "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z";
-const ICON_HIDDEN: &str = "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM4 4l16 16";
-const ICON_ADD: &str = "M12 5v14M5 12h14";
+use dioxus_free_icons::{
+    icons::ld_icons::{LdChevronDown, LdChevronUp, LdEye, LdEyeOff, LdPlus},
+    Icon,
+};
 
 #[component]
 pub fn Customize() -> Element {
@@ -41,7 +38,6 @@ pub fn Customize() -> Element {
                         }
                     }
 
-                    // Drawn like the bar it edits: one slot per shortcut.
                     div { class: "pref-group",
                         h3 { class: "field-label", "Phone tab bar" }
                         div { class: "slot-bar",
@@ -85,23 +81,22 @@ pub fn Customize() -> Element {
     }
 }
 
-/// One slot of the phone tab bar. It shows its shortcut the way the tab bar
-/// does, with a native picker laid over it to change or clear it.
+/// One slot of the phone tab bar, with a native picker laid over it.
 #[component]
 fn ShortcutSlot(slot: usize) -> Element {
     let settings = use_nav_settings();
     let preferences = settings.preferences();
     let chosen = preferences.shortcuts().get(slot).copied();
-    // Slots fill from the left, so past the first free one there is nothing to pick yet.
+    // Slots fill from the left
     let reachable = slot <= preferences.shortcuts().len();
 
     rsx! {
         label { class: if chosen.is_some() { "slot" } else { "slot is-empty" },
             if let Some(destination) = chosen {
-                Icon { path: destination.info().icon }
+                {(destination.info().icon)()}
                 span { class: "slot-label", "{destination.info().short_label}" }
             } else if reachable {
-                Icon { path: ICON_ADD }
+                Icon { class: "icon", icon: LdPlus }
             }
             select {
                 class: "slot-select",
@@ -119,8 +114,7 @@ fn ShortcutSlot(slot: usize) -> Element {
                 },
                 option { value: "", selected: chosen.is_none(), "Empty" }
                 for (index , destination) in Destination::ALL.iter().copied().enumerate() {
-                    // A filled slot offers every shown destination (picking one from
-                    // another slot swaps them); a free slot only the ones not in the bar.
+                    // Free slots only offer what isn't in the bar yet
                     if preferences.shown().contains(&destination)
                         && (chosen.is_some() || !preferences.shortcuts().contains(&destination))
                     {
@@ -148,8 +142,7 @@ fn DestinationRow(
     let settings = use_nav_settings();
     let info = destination.info();
 
-    // Applies one edit to a copy of the preferences and hands it to the shell,
-    // which shows it at once and saves it.
+    // Edit a copy and hand it to the shell, which shows and saves it
     let edit = move |change: fn(&mut NavPreferences, Destination)| {
         let mut next = settings.preferences();
         change(&mut next, destination);
@@ -158,7 +151,7 @@ fn DestinationRow(
 
     rsx! {
         li { class: if hidden { "pref-row is-hidden" } else { "pref-row" },
-            Icon { path: info.icon }
+            {(info.icon)()}
             span { class: "pref-label", "{info.label}" }
             div { class: "pref-actions",
                 if hidden {
@@ -167,7 +160,7 @@ fn DestinationRow(
                         r#type: "button",
                         "aria-label": "Show {info.label}",
                         onclick: move |_| edit(NavPreferences::show),
-                        Icon { path: ICON_HIDDEN }
+                        Icon { class: "icon", icon: LdEyeOff }
                     }
                 } else {
                     button {
@@ -176,7 +169,7 @@ fn DestinationRow(
                         "aria-label": "Move {info.label} up",
                         disabled: first,
                         onclick: move |_| edit(NavPreferences::move_earlier),
-                        Icon { path: ICON_UP }
+                        Icon { class: "icon", icon: LdChevronUp }
                     }
                     button {
                         class: "btn btn-icon",
@@ -184,14 +177,14 @@ fn DestinationRow(
                         "aria-label": "Move {info.label} down",
                         disabled: last,
                         onclick: move |_| edit(NavPreferences::move_later),
-                        Icon { path: ICON_DOWN }
+                        Icon { class: "icon", icon: LdChevronDown }
                     }
                     button {
                         class: "btn btn-icon",
                         r#type: "button",
                         "aria-label": "Hide {info.label}",
                         onclick: move |_| edit(NavPreferences::hide),
-                        Icon { path: ICON_SHOWN }
+                        Icon { class: "icon", icon: LdEye }
                     }
                 }
             }

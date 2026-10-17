@@ -13,6 +13,11 @@
 //! phone shortcuts stay as they chose them.
 
 use crate::Route;
+use dioxus::prelude::*;
+use dioxus_free_icons::{
+    icons::ld_icons::{LdArrowLeftRight, LdLandmark, LdLayers, LdLayoutDashboard},
+    Icon,
+};
 use serde::{Deserialize, Deserializer, Serialize};
 use strum::VariantArray;
 
@@ -38,8 +43,7 @@ pub struct DestinationInfo {
     pub label: &'static str,
     /// Short enough to sit under an icon in the phone tab bar.
     pub short_label: &'static str,
-    /// SVG path data on a 24x24 grid, drawn as an outline.
-    pub icon: &'static str,
+    pub icon: fn() -> Element,
     pub route: Route,
 }
 
@@ -52,25 +56,33 @@ impl Destination {
             Destination::Dashboard => DestinationInfo {
                 label: "Dashboard",
                 short_label: "Dashboard",
-                icon: "M4 5h7v7H4zM13 5h7v4h-7zM13 12h7v7h-7zM4 15h7v4H4z",
+                icon: || rsx! {
+                    Icon { class: "icon", icon: LdLayoutDashboard }
+                },
                 route: Route::Dashboard {},
             },
             Destination::Transactions => DestinationInfo {
                 label: "Transactions",
                 short_label: "Transactions",
-                icon: "M6 8h12M15 5l3 3-3 3M18 16H6M9 13l-3 3 3 3",
+                icon: || rsx! {
+                    Icon { class: "icon", icon: LdArrowLeftRight }
+                },
                 route: Route::Transactions {},
             },
             Destination::Accounts => DestinationInfo {
                 label: "Accounts",
                 short_label: "Accounts",
-                icon: "M12 4l8 4-8 4-8-4zM4 12l8 4 8-4M4 16l8 4 8-4",
+                icon: || rsx! {
+                    Icon { class: "icon", icon: LdLayers }
+                },
                 route: Route::Accounts {},
             },
             Destination::BankAccounts => DestinationInfo {
                 label: "Bank Accounts",
                 short_label: "Banks",
-                icon: "M3 10l9-6 9 6M5 10v8M9.7 10v8M14.3 10v8M19 10v8M3 20h18",
+                icon: || rsx! {
+                    Icon { class: "icon", icon: LdLandmark }
+                },
                 route: Route::BankAccounts {},
             },
         }

@@ -1,11 +1,14 @@
 use crate::{
-    components::icon::Icon,
     models::user::CurrentUser,
     navigation::{Destination, NavPreferences},
     views::error::LoginRedirectNotice,
     Route,
 };
 use dioxus::prelude::*;
+use dioxus_free_icons::{
+    icons::ld_icons::{LdMenu, LdPlus},
+    Icon,
+};
 use std::rc::Rc;
 
 #[get("/api/auth/me")]
@@ -28,8 +31,7 @@ async fn get_current_user() -> Result<Option<CurrentUser>, ServerFnError> {
 
                 return Ok(row.map(|r| CurrentUser {
                     username: r.username,
-                    // Preferences that cannot be read fall back to the defaults
-                    // rather than locking the user out of the navigation.
+                    // Unreadable preferences fall back to the defaults
                     navigation: r
                         .navigation
                         .and_then(|stored| serde_json::from_value(stored).ok())
@@ -135,7 +137,7 @@ pub fn use_nav_settings() -> NavSettings {
 /// a save started on the Customize page finishes even after leaving it.
 fn use_nav_settings_provider(initial: NavPreferences) -> NavSettings {
     let mut preferences = use_signal(|| initial.clone());
-    // What the server is known to hold; a failed save falls back to it.
+    // Last saved value; a failed save reverts to it
     let mut saved = use_signal(|| initial);
     let mut save_error = use_signal(|| None::<String>);
     let mut saving = use_signal(|| false);
@@ -146,7 +148,7 @@ fn use_nav_settings_provider(initial: NavPreferences) -> NavSettings {
         save_error.set(None);
 
         if saving() {
-            // The save in flight picks this up when it finishes.
+            // Picked up by the save in flight
             queued.set(Some(next));
             return;
         }
@@ -169,7 +171,7 @@ fn use_nav_settings_provider(initial: NavPreferences) -> NavSettings {
                 }
             }
 
-            // Never leave an arrangement on screen that the server did not accept.
+            // Revert anything the server did not accept
             if save_error.peek().is_some() {
                 preferences.set(saved());
             }
@@ -191,9 +193,6 @@ fn close_menu(mut menu_open: Signal<bool>) {
         menu_open.set(false);
     }
 }
-
-const ICON_ADD: &str = "M12 5v14M5 12h14";
-const ICON_MENU: &str = "M4 7h16M4 12h16M4 17h16";
 
 /// Pages are titled after their destination unless they need something more
 /// specific, so a new destination gets a title without being listed here.
@@ -249,14 +248,13 @@ fn Shell(user: CurrentUser) -> Element {
     let mut menu_button = use_signal(|| None::<Rc<MountedData>>);
     let mut menu_was_open = use_signal(|| false);
 
-    // Leaving the page closes the phone menu, however the navigation started.
+    // Navigating closes the menu
     use_effect(use_reactive!(|route| {
         let _ = route;
         close_menu(menu_open);
     }));
 
-    // Focus follows the menu for keyboards and screen readers: into it when it
-    // opens, back to its tab when it closes.
+    // Move focus into the menu when it opens, and back to its tab when it closes
     use_effect(move || {
         let open = menu_open();
         if open == *menu_was_open.peek() {
@@ -284,7 +282,7 @@ fn Shell(user: CurrentUser) -> Element {
     let preferences = settings.preferences();
     let current = route.destination();
     let shortcuts = preferences.shortcuts();
-    // "+" sits in the middle of the tab bar, with Menu always last.
+    // Shortcuts split around "+"; Menu is last
     let (before_add, after_add) = shortcuts.split_at(shortcuts.len().div_ceil(2));
     let current_is_in_menu = !current.is_some_and(|destination| shortcuts.contains(&destination));
 
@@ -297,8 +295,7 @@ fn Shell(user: CurrentUser) -> Element {
                 }
             },
 
-            // Sidebar; on small screens this is the sheet that Menu opens.
-            // Tapping anything in it closes the sheet again.
+            // Sidebar, shown as the Menu sheet on phones
             nav {
                 id: "primary-navigation",
                 class: "sidebar",
@@ -324,7 +321,7 @@ fn Shell(user: CurrentUser) -> Element {
                     }
                 }
 
-                // Footer: settings, then who is signed in with the way out beside it
+                // Footer
                 div { class: "sidebar-footer",
                     Link {
                         to: Route::Customize {},
@@ -353,13 +350,13 @@ fn Shell(user: CurrentUser) -> Element {
                 }
             }
 
-            // Fixed top bar (on small screens it only carries the brand)
+            // Fixed top bar
             header { class: "topbar",
                 span { class: "topbar-title", "{topbar_title(&route)}" }
                 span { class: "topbar-brand brand-title", "OxiLedger" }
             }
 
-            // Main content; out of reach while the phone menu covers it
+            // Main content
             main { class: "shell-inner", "inert": if menu_open() { "true" },
                 SuspenseBoundary {
                     fallback: |_| rsx! {
@@ -371,8 +368,7 @@ fn Shell(user: CurrentUser) -> Element {
                 }
             }
 
-            // Bottom tab bar, shown instead of the sidebar on small screens.
-            // Tapping a tab closes the menu, also when it is the current page.
+            // Bottom tab bar for phones
             nav {
                 class: "tabbar",
                 aria_label: "Shortcuts",
@@ -390,7 +386,7 @@ fn Shell(user: CurrentUser) -> Element {
                     to: Route::NewTransaction {},
                     class: "tab-add",
                     aria_label: "New transaction",
-                    Icon { path: ICON_ADD }
+                    Icon { class: "icon", icon: LdPlus }
                 }
                 div { class: "tabbar-side",
                     for destination in after_add.iter().copied() {
@@ -407,11 +403,11 @@ fn Shell(user: CurrentUser) -> Element {
                         "aria-controls": "primary-navigation",
                         onmounted: move |event| menu_button.set(Some(event.data())),
                         onclick: move |event| {
-                            // Keep the tab bar's own handler from closing it again.
+                            // Don't let the tab bar's handler close it again
                             event.stop_propagation();
                             menu_open.toggle();
                         },
-                        Icon { path: ICON_MENU }
+                        Icon { class: "icon", icon: LdMenu }
                         span { class: "tab-label", "Menu" }
                     }
                 }
@@ -426,7 +422,7 @@ fn TabLink(destination: Destination, active: bool) -> Element {
 
     rsx! {
         Link { to: info.route, class: if active { "tab is-active" } else { "tab" },
-            Icon { path: info.icon }
+            {(info.icon)()}
             span { class: "tab-label", "{info.short_label}" }
         }
     }
