@@ -6,6 +6,7 @@ mod bank_sync;
 mod components;
 mod models;
 mod navigation;
+mod preferences;
 #[cfg(feature = "server")]
 mod server;
 mod views;

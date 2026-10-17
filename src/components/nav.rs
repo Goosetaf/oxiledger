@@ -1,8 +1,6 @@
 use crate::{
-    models::user::CurrentUser,
-    navigation::{Destination, NavPreferences},
-    views::error::LoginRedirectNotice,
-    Route,
+    models::user::CurrentUser, navigation::Destination, preferences::use_preferences_provider,
+    views::error::LoginRedirectNotice, Route,
 };
 use dioxus::prelude::*;
 use dioxus_free_icons::{
@@ -21,8 +19,7 @@ async fn get_current_user() -> Result<Option<CurrentUser>, ServerFnError> {
         match require_auth(&pool, &cookies).await {
             Ok(user_id) => {
                 let row = sqlx::query!(
-                    r#"SELECT username, preferences -> 'navigation' AS "navigation?: serde_json::Value"
-                       FROM users WHERE id = $1"#,
+                    "SELECT username, preferences FROM users WHERE id = $1",
                     user_id
                 )
                 .fetch_optional(&pool)
@@ -32,10 +29,7 @@ async fn get_current_user() -> Result<Option<CurrentUser>, ServerFnError> {
                 return Ok(row.map(|r| CurrentUser {
                     username: r.username,
                     // Unreadable preferences fall back to the defaults
-                    navigation: r
-                        .navigation
-                        .and_then(|stored| serde_json::from_value(stored).ok())
-                        .unwrap_or_default(),
+                    preferences: serde_json::from_value(r.preferences).unwrap_or_default(),
                 }));
             }
             Err(ServerFnError::ServerError { code, .. })
@@ -71,119 +65,6 @@ async fn logout_action() -> Result<(), ServerFnError> {
     }
 
     Ok(())
-}
-
-#[post("/api/preferences/navigation")]
-async fn save_navigation(preferences: NavPreferences) -> Result<(), ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        use crate::server::auth::{extract_context, require_auth};
-
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
-
-        let navigation =
-            serde_json::to_value(&preferences).map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        sqlx::query!(
-            "UPDATE users
-             SET preferences = jsonb_set(preferences, '{navigation}', $1), updated_at = NOW()
-             WHERE id = $2",
-            navigation,
-            user_id
-        )
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-    }
-
-    Ok(())
-}
-
-/// The signed-in user's navigation preferences, shared by the app shell (which
-/// renders them) and the Customize page (which edits them).
-#[derive(Clone, Copy)]
-pub struct NavSettings {
-    preferences: Signal<NavPreferences>,
-    save_error: Signal<Option<String>>,
-    update: Callback<NavPreferences>,
-}
-
-impl NavSettings {
-    pub fn preferences(&self) -> NavPreferences {
-        (self.preferences)()
-    }
-
-    /// Why the latest change could not be saved, after it has been undone.
-    pub fn save_error(&self) -> Option<String> {
-        (self.save_error)()
-    }
-
-    /// Shows `next` right away and saves it in the background.
-    ///
-    /// Saves run one at a time and in order. Changes made while one is in
-    /// flight collapse into a single follow-up save of the latest state. If
-    /// the last save fails, the preferences return to what was last saved.
-    pub fn update(&self, next: NavPreferences) {
-        self.update.call(next);
-    }
-}
-
-pub fn use_nav_settings() -> NavSettings {
-    use_context()
-}
-
-/// Owns the navigation preferences for as long as the app shell is mounted, so
-/// a save started on the Customize page finishes even after leaving it.
-fn use_nav_settings_provider(initial: NavPreferences) -> NavSettings {
-    let mut preferences = use_signal(|| initial.clone());
-    // Last saved value; a failed save reverts to it
-    let mut saved = use_signal(|| initial);
-    let mut save_error = use_signal(|| None::<String>);
-    let mut saving = use_signal(|| false);
-    let mut queued = use_signal(|| None::<NavPreferences>);
-
-    let update = use_callback(move |next: NavPreferences| {
-        preferences.set(next.clone());
-        save_error.set(None);
-
-        if saving() {
-            // Picked up by the save in flight
-            queued.set(Some(next));
-            return;
-        }
-
-        saving.set(true);
-        spawn(async move {
-            let mut next = next;
-            loop {
-                match save_navigation(next.clone()).await {
-                    Ok(()) => {
-                        saved.set(next);
-                        save_error.set(None);
-                    }
-                    Err(err) => save_error.set(Some(err.to_string())),
-                }
-
-                match queued.take() {
-                    Some(newer) => next = newer,
-                    None => break,
-                }
-            }
-
-            // Revert anything the server did not accept
-            if save_error.peek().is_some() {
-                preferences.set(saved());
-            }
-            saving.set(false);
-        });
-    });
-
-    use_context_provider(|| NavSettings {
-        preferences,
-        save_error,
-        update,
-    })
 }
 
 /// Closes the phone menu. Writes only when it is open, so the many clicks that
@@ -242,7 +123,7 @@ pub fn Navbar() -> Element {
 fn Shell(user: CurrentUser) -> Element {
     let nav = use_navigator();
     let route = use_route::<Route>();
-    let settings = use_nav_settings_provider(user.navigation.clone());
+    let preferences = use_preferences_provider(user.preferences.clone());
     let mut menu_open = use_signal(|| false);
     let mut menu_element = use_signal(|| None::<Rc<MountedData>>);
     let mut menu_button = use_signal(|| None::<Rc<MountedData>>);
@@ -279,9 +160,9 @@ fn Shell(user: CurrentUser) -> Element {
         nav.push(Route::Login {});
     };
 
-    let preferences = settings.preferences();
+    let navigation = preferences.get().navigation;
     let current = route.destination();
-    let shortcuts = preferences.shortcuts();
+    let shortcuts = navigation.shortcuts();
     // Shortcuts split around "+"; Menu is last
     let (before_add, after_add) = shortcuts.split_at(shortcuts.len().div_ceil(2));
     let current_is_in_menu = !current.is_some_and(|destination| shortcuts.contains(&destination));
@@ -311,7 +192,7 @@ fn Shell(user: CurrentUser) -> Element {
 
                 // Nav links
                 div { class: "sidebar-nav",
-                    for destination in preferences.shown().iter().copied() {
+                    for destination in navigation.shown().iter().copied() {
                         Link {
                             key: "{destination:?}",
                             to: destination.info().route,

@@ -1,6 +1,6 @@
 use crate::{
-    components::nav::use_nav_settings,
     navigation::{Destination, NavPreferences, SHORTCUT_SLOTS},
+    preferences::use_preferences,
 };
 use dioxus::prelude::*;
 use dioxus_free_icons::{
@@ -10,9 +10,9 @@ use dioxus_free_icons::{
 
 #[component]
 pub fn Customize() -> Element {
-    let settings = use_nav_settings();
-    let preferences = settings.preferences();
-    let shown = preferences.shown();
+    let store = use_preferences();
+    let navigation = store.get().navigation;
+    let shown = navigation.shown();
 
     rsx! {
         div { class: "app-container",
@@ -21,7 +21,7 @@ pub fn Customize() -> Element {
                     h1 { class: "section-title", "Customize" }
                 }
 
-                if let Some(err) = settings.save_error() {
+                if let Some(err) = store.save_error() {
                     div { class: "message message-error", "Not saved, so the change was undone: {err}" }
                 }
 
@@ -32,8 +32,12 @@ pub fn Customize() -> Element {
                             class: "btn btn-secondary btn-sm",
                             r#type: "button",
                             "aria-label": "Reset navigation",
-                            disabled: preferences == NavPreferences::default(),
-                            onclick: move |_| settings.update(NavPreferences::default()),
+                            disabled: navigation == NavPreferences::default(),
+                            onclick: move |_| {
+                                let mut next = store.get();
+                                next.navigation = NavPreferences::default();
+                                store.set(next);
+                            },
                             "Reset"
                         }
                     }
@@ -61,11 +65,11 @@ pub fn Customize() -> Element {
                         }
                     }
 
-                    if !preferences.hidden().is_empty() {
+                    if !navigation.hidden().is_empty() {
                         div { class: "pref-group",
                             h3 { class: "field-label", "Hidden" }
                             ul { class: "pref-list",
-                                for destination in preferences.hidden().iter().copied() {
+                                for destination in navigation.hidden().iter().copied() {
                                     DestinationRow {
                                         key: "{destination:?}",
                                         destination,
@@ -84,11 +88,11 @@ pub fn Customize() -> Element {
 /// One slot of the phone tab bar, with a native picker laid over it.
 #[component]
 fn ShortcutSlot(slot: usize) -> Element {
-    let settings = use_nav_settings();
-    let preferences = settings.preferences();
-    let chosen = preferences.shortcuts().get(slot).copied();
+    let store = use_preferences();
+    let navigation = store.get().navigation;
+    let chosen = navigation.shortcuts().get(slot).copied();
     // Slots fill from the left
-    let reachable = slot <= preferences.shortcuts().len();
+    let reachable = slot <= navigation.shortcuts().len();
 
     rsx! {
         label { class: if chosen.is_some() { "slot" } else { "slot is-empty" },
@@ -108,15 +112,15 @@ fn ShortcutSlot(slot: usize) -> Element {
                         .parse::<usize>()
                         .ok()
                         .and_then(|index| Destination::ALL.get(index).copied());
-                    let mut next = settings.preferences();
-                    next.set_shortcut(slot, choice);
-                    settings.update(next);
+                    let mut next = store.get();
+                    next.navigation.set_shortcut(slot, choice);
+                    store.set(next);
                 },
                 option { value: "", selected: chosen.is_none(), "Empty" }
                 for (index , destination) in Destination::ALL.iter().copied().enumerate() {
                     // Free slots only offer what isn't in the bar yet
-                    if preferences.shown().contains(&destination)
-                        && (chosen.is_some() || !preferences.shortcuts().contains(&destination))
+                    if navigation.shown().contains(&destination)
+                        && (chosen.is_some() || !navigation.shortcuts().contains(&destination))
                     {
                         option {
                             value: "{index}",
@@ -139,14 +143,14 @@ fn DestinationRow(
     #[props(default)] first: bool,
     #[props(default)] last: bool,
 ) -> Element {
-    let settings = use_nav_settings();
+    let store = use_preferences();
     let info = destination.info();
 
-    // Edit a copy and hand it to the shell, which shows and saves it
+    // Edit a copy and hand it to the store, which shows and saves it
     let edit = move |change: fn(&mut NavPreferences, Destination)| {
-        let mut next = settings.preferences();
-        change(&mut next, destination);
-        settings.update(next);
+        let mut next = store.get();
+        change(&mut next.navigation, destination);
+        store.set(next);
     };
 
     rsx! {

@@ -1,4 +1,4 @@
-use crate::navigation::NavPreferences;
+use crate::preferences::Preferences;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -26,9 +26,9 @@ pub struct LoginRequest {
 }
 
 /// The signed-in user as the app shell needs them: who they are and how they
-/// have arranged the navigation.
+/// have tailored the app.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CurrentUser {
     pub username: String,
-    pub navigation: NavPreferences,
+    pub preferences: Preferences,
 }
