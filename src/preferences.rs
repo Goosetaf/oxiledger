@@ -81,7 +81,6 @@ pub fn use_preferences_provider(initial: Preferences) -> PreferencesStore {
         save_error.set(None);
 
         if saving() {
-            // Picked up by the save in flight
             queued.set(Some(next));
             return;
         }
