@@ -163,8 +163,18 @@ pub fn Accounts() -> Element {
                     div { class: "empty-state",
                         div { class: "empty-icon", "+" }
                         h3 { class: "section-title", "No accounts created yet" }
-                        p { class: "supporting-text",
-                            "Create your first ledger account to start recording activity."
+                        p { class: "supporting-text", "Add a starter set or create your own." }
+                        div { class: "status-actions",
+                            Link {
+                                class: "btn btn-primary",
+                                to: crate::Route::Setup {},
+                                "Add starter accounts"
+                            }
+                            Link {
+                                class: "btn btn-secondary",
+                                to: crate::Route::NewAccount {},
+                                "New account"
+                            }
                         }
                     }
                 } else {

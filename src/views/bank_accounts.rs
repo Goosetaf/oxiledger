@@ -171,6 +171,7 @@ pub fn BankAccounts() -> Element {
                         class: "btn btn-primary",
                         to: crate::Route::BankConnect {
                             source_id: None,
+                            provider: None,
                         },
                         "Connect bank"
                     }
@@ -278,6 +279,7 @@ pub fn BankAccounts() -> Element {
                                                     class: "btn btn-secondary btn-sm",
                                                     to: crate::Route::BankConnect {
                                                         source_id: Some(account.id),
+                                                        provider: None,
                                                     },
                                                     "Connect"
                                                 }
@@ -297,6 +299,7 @@ pub fn BankAccounts() -> Element {
                                                         class: "btn btn-secondary btn-sm",
                                                         to: crate::Route::BankConnect {
                                                             source_id: None,
+                                                            provider: None,
                                                         },
                                                         "Reconnect"
                                                     }

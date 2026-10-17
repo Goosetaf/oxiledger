@@ -123,6 +123,19 @@ impl AnyBankSyncProvider {
     }
 }
 
+/// Ids of the providers that have credentials configured in the environment.
+#[cfg(feature = "server")]
+pub fn configured_provider_ids() -> Vec<String> {
+    let mut providers = Vec::new();
+    if EnableBankingProvider::is_configured() {
+        providers.push("enable_banking".to_string());
+    }
+    if GoCardlessProvider::is_configured() {
+        providers.push("gocardless".to_string());
+    }
+    providers
+}
+
 #[cfg(feature = "server")]
 pub async fn get_provider(provider_id: &str) -> Result<AnyBankSyncProvider, error::BankSyncError> {
     match provider_id {
