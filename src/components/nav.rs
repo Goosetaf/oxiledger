@@ -1,12 +1,16 @@
-use crate::views::error::LoginRedirectNotice;
+use crate::{
+    models::user::CurrentUser, navigation::Destination, preferences::use_preferences_provider,
+    views::error::LoginRedirectNotice, Route,
+};
 use dioxus::prelude::*;
 use dioxus_free_icons::{
-    icons::ld_icons::{LdArrowLeftRight, LdLandmark, LdLayers, LdLayoutDashboard, LdPlus},
+    icons::ld_icons::{LdMenu, LdPlus},
     Icon,
 };
+use std::rc::Rc;
 
 #[get("/api/auth/me")]
-async fn get_current_user() -> Result<Option<String>, ServerFnError> {
+async fn get_current_user() -> Result<Option<CurrentUser>, ServerFnError> {
     #[cfg(feature = "server")]
     {
         use crate::server::auth::{extract_context, require_auth};
@@ -14,11 +18,18 @@ async fn get_current_user() -> Result<Option<String>, ServerFnError> {
         let (pool, cookies) = extract_context().await?;
         match require_auth(&pool, &cookies).await {
             Ok(user_id) => {
-                let row = sqlx::query!("SELECT username FROM users WHERE id = $1", user_id)
-                    .fetch_optional(&pool)
-                    .await
-                    .map_err(|e| ServerFnError::new(e.to_string()))?;
-                return Ok(row.map(|r| r.username));
+                let row = sqlx::query!(
+                    "SELECT username, preferences FROM users WHERE id = $1",
+                    user_id
+                )
+                .fetch_optional(&pool)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+                return Ok(row.map(|r| CurrentUser {
+                    username: r.username,
+                    preferences: serde_json::from_value(r.preferences).unwrap_or_default(),
+                }));
             }
             Err(ServerFnError::ServerError { code, .. })
                 if code == StatusCode::UNAUTHORIZED.as_u16() =>
@@ -55,97 +66,98 @@ async fn logout_action() -> Result<(), ServerFnError> {
     Ok(())
 }
 
-fn is_nav_item_active(route: &crate::Route, item: &str) -> bool {
-    matches!(
-        (route, item),
-        (crate::Route::Dashboard {}, "dashboard")
-            | (crate::Route::Accounts {}, "accounts")
-            | (crate::Route::NewAccount {}, "accounts")
-            | (crate::Route::EditAccount { .. }, "accounts")
-            | (crate::Route::Transactions {}, "transactions")
-            | (crate::Route::NewTransaction {}, "transactions")
-            | (crate::Route::EditTransaction { .. }, "transactions")
-            | (crate::Route::NewTransactionFromBank { .. }, "transactions")
-            | (crate::Route::BankAccounts {}, "bank_accounts")
-            | (crate::Route::NewBankAccount {}, "bank_accounts")
-            | (crate::Route::BankAccountDetail { .. }, "bank_accounts")
-            | (crate::Route::BankAccountEdit { .. }, "bank_accounts")
-            | (crate::Route::BankConnect { .. }, "bank_accounts")
-            | (crate::Route::BankAccountMap { .. }, "bank_accounts")
-    )
-}
-
-fn active_nav_class(route: &crate::Route, item: &str) -> &'static str {
-    if is_nav_item_active(route, item) {
-        "nav-link is-active"
-    } else {
-        "nav-link"
-    }
-}
-
-fn active_tab_class(route: &crate::Route, item: &str) -> &'static str {
-    if is_nav_item_active(route, item) {
-        "tab is-active"
-    } else {
-        "tab"
-    }
-}
-
-fn topbar_title(route: &crate::Route) -> &'static str {
-    match route {
-        crate::Route::Dashboard {} => "Dashboard Overview",
-        crate::Route::Accounts {}
-        | crate::Route::NewAccount {}
-        | crate::Route::EditAccount { .. } => "Accounts",
-        crate::Route::Transactions {}
-        | crate::Route::NewTransaction {}
-        | crate::Route::NewTransactionFromBank { .. }
-        | crate::Route::EditTransaction { .. } => "Transactions",
-        crate::Route::BankAccounts {} => "Bank Accounts",
-        crate::Route::BankAccountDetail { .. } => "Bank Account",
-        crate::Route::BankConnect { .. } => "Connect a Bank",
-        crate::Route::BankAccountMap { .. } => "Map Bank Accounts",
-        _ => "OxiLedger",
+fn close_menu(mut menu_open: Signal<bool>) {
+    if *menu_open.peek() {
+        menu_open.set(false);
     }
 }
 
 #[component]
 pub fn Navbar() -> Element {
     let user_future = use_server_future(get_current_user)?;
-    let nav = use_navigator();
-    let route = use_route::<crate::Route>();
 
-    let handle_logout = use_callback(move |_: MouseEvent| {
-        spawn(async move {
-            let _ = logout_action().await;
-            nav.push(crate::Route::Login {});
-        });
+    match user_future() {
+        Some(Ok(Some(user))) => rsx! {
+            Shell { user }
+        },
+        Some(Ok(None)) => rsx! {
+            LoginRedirectNotice {
+                title: "Please sign in".to_string(),
+                message: "You need an active session to view this page.".to_string(),
+            }
+        },
+        Some(Err(err)) => Err(err.into()),
+        None => rsx! {
+            div { class: "app-container",
+                div { class: "message message-info", "Checking your session..." }
+            }
+        },
+    }
+}
+
+/// The sidebar, tab bar and menu around every signed-in page.
+#[component]
+fn Shell(user: CurrentUser) -> Element {
+    let nav = use_navigator();
+    let route = use_route::<Route>();
+    let preferences = use_preferences_provider(user.preferences.clone());
+    let mut menu_open = use_signal(|| false);
+    let mut menu_element = use_signal(|| None::<Rc<MountedData>>);
+    let mut menu_button = use_signal(|| None::<Rc<MountedData>>);
+    let mut menu_was_open = use_signal(|| false);
+
+    use_effect(use_reactive!(|route| {
+        let _ = route;
+        close_menu(menu_open);
+    }));
+
+    use_effect(move || {
+        let open = menu_open();
+        if open == *menu_was_open.peek() {
+            return;
+        }
+        menu_was_open.set(open);
+
+        let target = if open {
+            menu_element.peek().clone()
+        } else {
+            menu_button.peek().clone()
+        };
+        if let Some(target) = target {
+            spawn(async move {
+                let _ = target.set_focus(true).await;
+            });
+        }
     });
 
-    let username = match user_future() {
-        Some(Ok(Some(name))) => name,
-        Some(Ok(None)) => {
-            return rsx! {
-                LoginRedirectNotice {
-                    title: "Please sign in".to_string(),
-                    message: "You need an active session to view this page.".to_string(),
-                }
-            };
-        }
-        Some(Err(err)) => return Err(err.into()),
-        None => {
-            return rsx! {
-                div { class: "app-container",
-                    div { class: "message message-info", "Checking your session..." }
-                }
-            };
-        }
+    let handle_logout = move |_| async move {
+        let _ = logout_action().await;
+        nav.push(Route::Login {});
     };
 
+    let navigation = preferences.get().navigation;
+    let current = route.destination();
+    let shortcuts = navigation.shortcuts();
+    let (before_add, after_add) = shortcuts.split_at(shortcuts.len().div_ceil(2));
+    let current_is_in_menu = !current.is_some_and(|destination| shortcuts.contains(&destination));
+
     rsx! {
-        div { class: "app-shell",
-            // Sidebar
-            nav { class: "sidebar",
+        div {
+            class: if menu_open() { "app-shell menu-open" } else { "app-shell" },
+            onkeydown: move |event| {
+                if event.key() == Key::Escape {
+                    close_menu(menu_open);
+                }
+            },
+
+            nav {
+                id: "primary-navigation",
+                class: "sidebar",
+                aria_label: "Main",
+                tabindex: "-1",
+                onmounted: move |event| menu_element.set(Some(event.data())),
+                onclick: move |_| close_menu(menu_open),
+
                 // Brand
                 div { class: "sidebar-brand",
                     span { class: "brand-title", "OxiLedger" }
@@ -153,105 +165,119 @@ pub fn Navbar() -> Element {
 
                 // Nav links
                 div { class: "sidebar-nav",
-                    Link {
-                        to: crate::Route::Dashboard {},
-                        class: active_nav_class(&route, "dashboard"),
-                        "Dashboard"
-                    }
-                    Link {
-                        to: crate::Route::Transactions {},
-                        class: active_nav_class(&route, "transactions"),
-                        "Transactions"
-                    }
-                    Link {
-                        to: crate::Route::Accounts {},
-                        class: active_nav_class(&route, "accounts"),
-                        "Accounts"
-                    }
-                    Link {
-                        to: crate::Route::BankAccounts {},
-                        class: active_nav_class(&route, "bank_accounts"),
-                        "Bank Accounts"
+                    for destination in navigation.shown().iter().copied() {
+                        Link {
+                            key: "{destination:?}",
+                            to: destination.info().route,
+                            class: if current == Some(destination) { "nav-link is-active" } else { "nav-link" },
+                            "{destination.info().label}"
+                        }
                     }
                 }
 
-                // Footer links
+                // Footer
                 div { class: "sidebar-footer",
-                    div {
-                        class: "nav-user",
-                        style: "padding: 8px 24px; align-items: flex-start;",
-                        span { class: "eyebrow", "Signed In" }
-                        span { class: "label-strong", "{username}" }
+                    Link {
+                        to: Route::Customize {},
+                        class: if matches!(route, Route::Customize {}) { "nav-link is-active" } else { "nav-link" },
+                        "Customize"
                     }
-                    button {
-                        class: "nav-link",
-                        style: "width: 100%; justify-content: flex-start; border-radius: 0; text-align: left; background: none; cursor: pointer;",
-                        onclick: handle_logout,
-                        "Sign out"
+                    div { class: "sidebar-account",
+                        div { class: "account-identity",
+                            span { class: "eyebrow", "Signed In" }
+                            span { class: "account-name", "{user.username}" }
+                        }
+                        button {
+                            class: "account-signout",
+                            r#type: "button",
+                            onclick: handle_logout,
+                            "Sign out"
+                        }
                     }
+                }
+            }
+
+            if menu_open() {
+                div {
+                    class: "menu-backdrop",
+                    onclick: move |_| close_menu(menu_open),
                 }
             }
 
             // Fixed top bar
             header { class: "topbar",
-                span { class: "topbar-title", "{topbar_title(&route)}" }
+                span { class: "topbar-title", "{route.title()}" }
                 span { class: "topbar-brand brand-title", "OxiLedger" }
-                div { class: "topbar-account",
-                    span { class: "topbar-user", "{username}" }
-                    button {
-                        class: "topbar-signout",
-                        r#type: "button",
-                        onclick: handle_logout,
-                        "Sign out"
-                    }
-                }
             }
 
             // Main content
-            main { class: "shell-inner",
+            main { class: "shell-inner", "inert": if menu_open() { "true" },
                 SuspenseBoundary {
                     fallback: |_| rsx! {
                         div { class: "app-container",
                             div { class: "message message-info", "Loading page..." }
                         }
                     },
-                    Outlet::<crate::Route> {}
+                    Outlet::<Route> {}
                 }
             }
 
-            // Bottom tab bar, shown instead of the sidebar on small screens
-            nav { class: "tabbar", aria_label: "Primary",
-                Link {
-                    to: crate::Route::Dashboard {},
-                    class: active_tab_class(&route, "dashboard"),
-                    Icon { class: "tab-icon", icon: LdLayoutDashboard }
-                    span { class: "tab-label", "Dashboard" }
+            // Bottom tab bar for phones
+            nav {
+                class: "tabbar",
+                aria_label: "Shortcuts",
+                onclick: move |_| close_menu(menu_open),
+                div { class: "tabbar-side",
+                    for destination in before_add.iter().copied() {
+                        TabLink {
+                            key: "{destination:?}",
+                            destination,
+                            active: current == Some(destination),
+                        }
+                    }
                 }
                 Link {
-                    to: crate::Route::Transactions {},
-                    class: active_tab_class(&route, "transactions"),
-                    Icon { class: "tab-icon", icon: LdArrowLeftRight }
-                    span { class: "tab-label", "Transactions" }
-                }
-                Link {
-                    to: crate::Route::NewTransaction {},
+                    to: Route::NewTransaction {},
                     class: "tab-add",
                     aria_label: "New transaction",
-                    Icon { class: "tab-icon", icon: LdPlus }
+                    Icon { class: "icon", icon: LdPlus }
                 }
-                Link {
-                    to: crate::Route::Accounts {},
-                    class: active_tab_class(&route, "accounts"),
-                    Icon { class: "tab-icon", icon: LdLayers }
-                    span { class: "tab-label", "Accounts" }
-                }
-                Link {
-                    to: crate::Route::BankAccounts {},
-                    class: active_tab_class(&route, "bank_accounts"),
-                    Icon { class: "tab-icon", icon: LdLandmark }
-                    span { class: "tab-label", "Banks" }
+                div { class: "tabbar-side",
+                    for destination in after_add.iter().copied() {
+                        TabLink {
+                            key: "{destination:?}",
+                            destination,
+                            active: current == Some(destination),
+                        }
+                    }
+                    button {
+                        class: if menu_open() || current_is_in_menu { "tab is-active" } else { "tab" },
+                        r#type: "button",
+                        "aria-expanded": "{menu_open}",
+                        "aria-controls": "primary-navigation",
+                        onmounted: move |event| menu_button.set(Some(event.data())),
+                        onclick: move |event| {
+                            // Don't let the tab bar's handler close it again
+                            event.stop_propagation();
+                            menu_open.toggle();
+                        },
+                        Icon { class: "icon", icon: LdMenu }
+                        span { class: "tab-label", "Menu" }
+                    }
                 }
             }
+        }
+    }
+}
+
+#[component]
+fn TabLink(destination: Destination, active: bool) -> Element {
+    let info = destination.info();
+
+    rsx! {
+        Link { to: info.route, class: if active { "tab is-active" } else { "tab" },
+            {(info.icon)()}
+            span { class: "tab-label", "{info.short_label}" }
         }
     }
 }

@@ -1,3 +1,4 @@
+use crate::preferences::Preferences;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -22,4 +23,10 @@ pub struct RegisterRequest {
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CurrentUser {
+    pub username: String,
+    pub preferences: Preferences,
 }
