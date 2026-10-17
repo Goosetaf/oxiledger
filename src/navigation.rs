@@ -1,7 +1,3 @@
-//! The app's top-level destinations and how each user has arranged them.
-//!
-//! To add one, add a variant to [`Destination`] and the compiler asks for the rest.
-
 use crate::Route;
 use dioxus::prelude::*;
 use dioxus_free_icons::{
@@ -11,12 +7,8 @@ use dioxus_free_icons::{
 use serde::{Deserialize, Deserializer, Serialize};
 use strum::VariantArray;
 
-/// How many destinations fit beside "+" and "Menu" in the phone tab bar.
 pub const SHORTCUT_SLOTS: usize = 3;
 
-/// A top-level place in the app, listed in the order a new user sees them.
-///
-/// The names are saved in user preferences, so a renamed variant needs a `#[serde(alias)]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, VariantArray)]
 #[serde(rename_all = "snake_case")]
 pub enum Destination {
@@ -28,7 +20,6 @@ pub enum Destination {
 
 pub struct DestinationInfo {
     pub label: &'static str,
-    /// Short enough to sit under an icon in the phone tab bar.
     pub short_label: &'static str,
     pub icon: fn() -> Element,
     pub route: Route,
@@ -76,7 +67,6 @@ impl Destination {
 }
 
 impl Route {
-    /// The destination highlighted in the navigation while on this page, if any.
     pub fn destination(&self) -> Option<Destination> {
         match self {
             Route::Dashboard {} => Some(Destination::Dashboard),
@@ -103,10 +93,6 @@ impl Route {
     }
 }
 
-/// One user's arrangement of the navigation, with the menu order and phone shortcuts chosen separately.
-///
-/// Every destination is either shown or hidden, and shortcuts are always shown destinations.
-/// Values read from storage or requests are repaired on the way in.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(from = "StoredNavPreferences")]
 pub struct NavPreferences {
@@ -126,18 +112,14 @@ impl Default for NavPreferences {
 }
 
 impl NavPreferences {
-    /// Destinations in the sidebar and the phone menu, in that order.
     pub fn shown(&self) -> &[Destination] {
         &self.shown
     }
 
-    /// Destinations in the phone tab bar, left to right. At most
-    /// [`SHORTCUT_SLOTS`], with no gaps.
     pub fn shortcuts(&self) -> &[Destination] {
         &self.shortcuts
     }
 
-    /// Destinations left out of the navigation. Their pages still open by link.
     pub fn hidden(&self) -> &[Destination] {
         &self.hidden
     }
@@ -158,8 +140,6 @@ impl NavPreferences {
         }
     }
 
-    /// Takes a destination out of the navigation, and out of the tab bar if it
-    /// was a shortcut.
     pub fn hide(&mut self, destination: Destination) {
         if let Some(index) = self.shown.iter().position(|d| *d == destination) {
             self.shown.remove(index);
@@ -168,7 +148,6 @@ impl NavPreferences {
         }
     }
 
-    /// Brings a hidden destination back, after the ones already shown.
     pub fn show(&mut self, destination: Destination) {
         if let Some(index) = self.hidden.iter().position(|d| *d == destination) {
             self.hidden.remove(index);
@@ -176,10 +155,6 @@ impl NavPreferences {
         }
     }
 
-    /// Puts a shown destination in a tab bar slot, or empties the slot with `None`.
-    ///
-    /// Picking one that already has a slot swaps the two. Emptying a slot closes the gap,
-    /// and a slot past the last shortcut means the first free one.
     pub fn set_shortcut(&mut self, slot: usize, destination: Option<Destination>) {
         if slot >= SHORTCUT_SLOTS {
             return;
@@ -206,10 +181,6 @@ impl NavPreferences {
     }
 }
 
-/// [`NavPreferences`] as stored or submitted, before repair.
-///
-/// Unknown names and repeats are dropped, unmentioned destinations are shown last, and
-/// shortcuts that are no longer shown are dropped. Only a value without shortcuts gets the defaults.
 #[derive(Default, Deserialize)]
 #[serde(default)]
 struct StoredNavPreferences {
@@ -256,7 +227,6 @@ impl From<StoredNavPreferences> for NavPreferences {
     }
 }
 
-/// Reads a list of destination names, skipping the ones this build does not know.
 fn known_destinations<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<Destination>, D::Error> {
@@ -269,8 +239,6 @@ fn known_destinations<'de, D: Deserializer<'de>>(
         .collect())
 }
 
-/// As [`known_destinations`], telling a list that was never saved apart from
-/// one saved empty.
 fn known_destinations_if_present<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Vec<Destination>>, D::Error> {
@@ -287,8 +255,6 @@ mod tests {
         serde_json::from_value(stored).expect("navigation preferences should always be readable")
     }
 
-    /// Every destination but the given ones, in the default order. Keeps these
-    /// tests true when a destination is added.
     fn all_except(excluded: &[Destination]) -> Vec<Destination> {
         Destination::ALL
             .iter()

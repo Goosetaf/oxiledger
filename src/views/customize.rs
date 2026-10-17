@@ -85,7 +85,6 @@ pub fn Customize() -> Element {
     }
 }
 
-/// One slot of the phone tab bar, with a native picker laid over it.
 #[component]
 fn ShortcutSlot(slot: usize) -> Element {
     let store = use_preferences();
@@ -134,7 +133,6 @@ fn ShortcutSlot(slot: usize) -> Element {
     }
 }
 
-/// `first` and `last` say where moving stops.
 #[component]
 fn DestinationRow(
     destination: Destination,

@@ -1,7 +1,3 @@
-//! Everything a user has tailored, stored as one JSON object in `users.preferences`.
-//!
-//! Each feature owns one field of [`Preferences`], so a new preference is just a new field.
-
 use crate::navigation::NavPreferences;
 use dioxus::prelude::*;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
@@ -12,8 +8,6 @@ pub struct Preferences {
     pub navigation: NavPreferences,
 }
 
-/// Reads one feature's preferences, falling back to its defaults when they
-/// cannot be read, so one bad field never resets the others.
 fn or_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: Deserializer<'de>,
@@ -60,15 +54,10 @@ impl PreferencesStore {
         (self.current)()
     }
 
-    /// Why the latest change could not be saved, after it has been undone.
     pub fn save_error(&self) -> Option<String> {
         (self.save_error)()
     }
 
-    /// Shows `next` right away and saves it in the background.
-    ///
-    /// Saves run in order, changes made during a save are sent together after it, and a
-    /// failed save puts back what was last saved.
     pub fn set(&self, next: Preferences) {
         self.set.call(next);
     }
@@ -78,8 +67,7 @@ pub fn use_preferences() -> PreferencesStore {
     use_context()
 }
 
-/// Owns the preferences for as long as the calling component is mounted, so a
-/// save started on one page finishes even after leaving it.
+/// Call from a component that outlives page changes, so saves are not cut short.
 pub fn use_preferences_provider(initial: Preferences) -> PreferencesStore {
     let mut current = use_signal(|| initial.clone());
     // Last saved value, which a failed save reverts to
