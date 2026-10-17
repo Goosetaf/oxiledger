@@ -231,7 +231,7 @@ pub fn Transactions() -> Element {
                             "Review activity and create manual entries."
                         }
                     }
-                    // Phones get this action from the "+" in the tab bar instead.
+                    // Phones use bottom bar instead
                     Link {
                         class: "btn btn-primary hide-on-mobile",
                         to: crate::Route::NewTransaction {},
