@@ -243,6 +243,8 @@ impl From<StoredNavPreferences> for NavPreferences {
     }
 }
 
+/// Skips names this build does not know, for example after a rollback or a removed destination.
+/// A plain `Vec<Destination>` would fail on them instead, resetting the user's whole navigation.
 fn known_destinations<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<Destination>, D::Error> {
@@ -255,6 +257,7 @@ fn known_destinations<'de, D: Deserializer<'de>>(
         .collect())
 }
 
+/// Like `known_destinations`, but tells shortcuts that were never saved apart from an empty list.
 fn known_destinations_if_present<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Vec<Destination>>, D::Error> {
