@@ -1,16 +1,6 @@
 //! The app's top-level destinations and how each user has arranged them.
 //!
-//! The sidebar, the phone tab bar, the phone menu and the Customize page all
-//! render from this module, so a destination added here shows up in every one
-//! of them. To add one:
-//!
-//! 1. add a variant to [`Destination`],
-//! 2. describe it in [`Destination::info`],
-//! 3. assign its pages in [`Route::destination`].
-//!
-//! The compiler asks for steps 2 and 3. Existing users get the new destination
-//! at the end of their navigation; nothing they arranged moves, and their
-//! phone shortcuts stay as they chose them.
+//! To add one, add a variant to [`Destination`] and the compiler asks for the rest.
 
 use crate::Route;
 use dioxus::prelude::*;
@@ -24,11 +14,9 @@ use strum::VariantArray;
 /// How many destinations fit beside "+" and "Menu" in the phone tab bar.
 pub const SHORTCUT_SLOTS: usize = 3;
 
-/// A top-level place in the app. The variants are in the order a new user sees
-/// them.
+/// A top-level place in the app, listed in the order a new user sees them.
 ///
-/// The serialized names are stored in user preferences: when renaming a
-/// variant, keep the old name readable with `#[serde(alias = "...")]`.
+/// The names are saved in user preferences, so a renamed variant needs a `#[serde(alias)]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, VariantArray)]
 #[serde(rename_all = "snake_case")]
 pub enum Destination {
@@ -90,9 +78,7 @@ impl Destination {
 }
 
 impl Route {
-    /// The destination a page belongs to, which is the one the navigation
-    /// highlights while you are on it. Pages reached from outside the
-    /// destination list (signing in, Customize) belong to none.
+    /// The destination highlighted in the navigation while on this page, if any.
     pub fn destination(&self) -> Option<Destination> {
         match self {
             Route::Dashboard {} => Some(Destination::Dashboard),
@@ -119,17 +105,10 @@ impl Route {
     }
 }
 
-/// One user's arrangement of the navigation.
+/// One user's arrangement of the navigation, with the menu order and phone shortcuts chosen separately.
 ///
-/// Two things are arranged separately, because a phone and a desk are used
-/// for different things: the order of the sidebar and phone menu, and which
-/// destinations are shortcuts in the phone tab bar.
-///
-/// Every destination is either shown or hidden, never both and never neither,
-/// and the shortcuts are shown destinations, each at most once. That holds for
-/// any value of this type, however it was produced: reading it from the
-/// database or from a request repairs what is stale (see
-/// [`StoredNavPreferences`]), and the editing methods keep it true.
+/// Every destination is either shown or hidden, and shortcuts are always shown destinations.
+/// Values read from storage or requests are repaired on the way in.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(from = "StoredNavPreferences")]
 pub struct NavPreferences {
@@ -201,12 +180,10 @@ impl NavPreferences {
         }
     }
 
-    /// Puts a shown destination in a tab bar slot, or empties the slot with
-    /// `None`.
+    /// Puts a shown destination in a tab bar slot, or empties the slot with `None`.
     ///
-    /// A destination appears in the tab bar once, so choosing one that already
-    /// has a slot swaps the two. Slots have no gaps: emptying one closes up
-    /// the rest, and a slot past the last shortcut means the first free one.
+    /// Picking one that already has a slot swaps the two. Emptying a slot closes the gap,
+    /// and a slot past the last shortcut means the first free one.
     pub fn set_shortcut(&mut self, slot: usize, destination: Option<Destination>) {
         if slot >= SHORTCUT_SLOTS {
             return;
@@ -233,13 +210,10 @@ impl NavPreferences {
     }
 }
 
-/// [`NavPreferences`] as it arrives from storage or a request, before repair.
+/// [`NavPreferences`] as stored or submitted, before repair.
 ///
-/// It may predate a destination, name one that no longer exists, or list one
-/// twice. Converting it keeps what the user chose and fills in the rest:
-/// unknown names are dropped, destinations it never mentions are shown after
-/// the ones it does, and shortcuts that are no longer shown are dropped. Only
-/// a value that has never chosen shortcuts gets the default ones.
+/// Unknown names and repeats are dropped, unmentioned destinations are shown last, and
+/// shortcuts that are no longer shown are dropped. Only a value without shortcuts gets the defaults.
 #[derive(Default, Deserialize)]
 #[serde(default)]
 struct StoredNavPreferences {
@@ -338,8 +312,7 @@ mod tests {
 
     #[test]
     fn stored_names_never_change() {
-        // Saved preferences hold these names. Add a line for a new destination;
-        // an existing line only changes together with a `#[serde(alias)]`.
+        // Saved preferences hold these names, so add new ones and only change one with an alias
         for (destination, name) in [
             (Dashboard, "dashboard"),
             (Transactions, "transactions"),
@@ -423,7 +396,7 @@ mod tests {
         preferences.move_earlier(first);
         assert_eq!(preferences.shown(), Destination::ALL);
 
-        // Already at the ends: nothing moves.
+        // Nothing moves past the ends
         preferences.move_earlier(first);
         preferences.move_later(last);
         assert_eq!(preferences.shown(), Destination::ALL);

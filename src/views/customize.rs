@@ -134,8 +134,7 @@ fn ShortcutSlot(slot: usize) -> Element {
     }
 }
 
-/// One destination with its controls. `first` and `last` are its position among
-/// the shown destinations, which is where moving stops.
+/// One destination with its controls. `first` and `last` say where moving stops.
 #[component]
 fn DestinationRow(
     destination: Destination,

@@ -72,7 +72,6 @@ fn close_menu(mut menu_open: Signal<bool>) {
     }
 }
 
-/// Layout for signed-in pages: checks the session, then hands over to [`Shell`].
 #[component]
 pub fn Navbar() -> Element {
     let user_future = use_server_future(get_current_user)?;
@@ -96,11 +95,7 @@ pub fn Navbar() -> Element {
     }
 }
 
-/// The chrome around every signed-in page.
-///
-/// Wide screens get a sidebar listing every shown destination. Small screens
-/// get a tab bar with the user's shortcuts, "+" and Menu; Menu opens that same
-/// sidebar as a sheet, so the two can never list different things.
+/// The sidebar, tab bar and menu around every signed-in page.
 #[component]
 fn Shell(user: CurrentUser) -> Element {
     let nav = use_navigator();
@@ -145,7 +140,7 @@ fn Shell(user: CurrentUser) -> Element {
     let navigation = preferences.get().navigation;
     let current = route.destination();
     let shortcuts = navigation.shortcuts();
-    // Shortcuts split around "+"; Menu is last
+    // Shortcuts split around the + button with Menu last
     let (before_add, after_add) = shortcuts.split_at(shortcuts.len().div_ceil(2));
     let current_is_in_menu = !current.is_some_and(|destination| shortcuts.contains(&destination));
 

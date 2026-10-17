@@ -1,8 +1,6 @@
-//! Everything a user has tailored, stored as one JSON object in
-//! `users.preferences` and loaded with the session.
+//! Everything a user has tailored, stored as one JSON object in `users.preferences`.
 //!
-//! Each feature owns one field of [`Preferences`]. Adding a preference means
-//! adding a field; loading, saving and the shared store come with it.
+//! Each feature owns one field of [`Preferences`], so a new preference is just a new field.
 
 use crate::navigation::NavPreferences;
 use dioxus::prelude::*;
@@ -70,9 +68,8 @@ impl PreferencesStore {
 
     /// Shows `next` right away and saves it in the background.
     ///
-    /// Saves run one at a time and in order. Changes made while one is in
-    /// flight collapse into a single follow-up save of the latest state. If
-    /// the last save fails, the preferences return to what was last saved.
+    /// Saves run in order, changes made during a save are sent together after it, and a
+    /// failed save puts back what was last saved.
     pub fn set(&self, next: Preferences) {
         self.set.call(next);
     }
@@ -86,7 +83,7 @@ pub fn use_preferences() -> PreferencesStore {
 /// save started on one page finishes even after leaving it.
 pub fn use_preferences_provider(initial: Preferences) -> PreferencesStore {
     let mut current = use_signal(|| initial.clone());
-    // Last saved value; a failed save reverts to it
+    // Last saved value, which a failed save reverts to
     let mut saved = use_signal(|| initial);
     let mut save_error = use_signal(|| None::<String>);
     let mut saving = use_signal(|| false);

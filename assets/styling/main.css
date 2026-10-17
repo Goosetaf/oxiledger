@@ -1252,7 +1252,7 @@ table {
   margin-bottom: 18px;
 }
 
-/* Each group is labelled and framed: phone tab bar, menu, hidden. */
+/* Every group is labelled and framed. */
 .pref-group + .pref-group {
   margin-top: 18px;
 }
@@ -1269,8 +1269,7 @@ table {
   border-radius: var(--radius-md);
 }
 
-/* The phone tab bar, drawn as the bar it is: one slot per shortcut, carrying
-   the tab bar's own colour. Each slot has a native picker laid over it. */
+/* The phone tab bar, one slot per shortcut with a native picker laid over each. */
 .slot-bar {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1483,9 +1482,7 @@ table {
     display: none;
   }
 
-  /* --- Shell: the sidebar becomes a bottom tab bar ---
-     The sidebar is not dropped: it is the sheet that the Menu tab opens, so
-     whatever it lists on a wide screen is one tap away on a phone too. */
+  /* Shell. On phones the sidebar becomes the sheet the Menu tab opens. */
 
   .sidebar {
     display: none;
@@ -1570,7 +1567,7 @@ table {
     overflow: hidden;
   }
 
-  /* The top bar scrolls away with the page; it only holds the brand. */
+  /* The top bar scrolls away with the page and only holds the brand. */
   .topbar {
     position: static;
     height: auto;
@@ -2177,7 +2174,7 @@ table {
   }
 }
 
-/* Narrow phones: Customize row actions drop under the name instead of crowding it. */
+/* On narrow phones Customize row actions drop under the name. */
 @media (max-width: 359px) {
   .pref-row {
     flex-wrap: wrap;

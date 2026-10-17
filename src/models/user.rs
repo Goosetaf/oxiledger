@@ -25,8 +25,7 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-/// The signed-in user as the app shell needs them: who they are and how they
-/// have tailored the app.
+/// The signed-in user and their preferences, as the app shell needs them.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CurrentUser {
     pub username: String,
