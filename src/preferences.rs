@@ -117,7 +117,6 @@ pub fn use_preferences_provider(initial: Preferences) -> PreferencesStore {
                 }
             }
 
-            // Revert anything the server did not accept
             if save_error.peek().is_some() {
                 current.set(saved());
             }

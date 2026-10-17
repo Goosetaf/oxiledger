@@ -106,13 +106,11 @@ fn Shell(user: CurrentUser) -> Element {
     let mut menu_button = use_signal(|| None::<Rc<MountedData>>);
     let mut menu_was_open = use_signal(|| false);
 
-    // Navigating closes the menu
     use_effect(use_reactive!(|route| {
         let _ = route;
         close_menu(menu_open);
     }));
 
-    // Move focus into the menu when it opens, and back to its tab when it closes
     use_effect(move || {
         let open = menu_open();
         if open == *menu_was_open.peek() {
@@ -140,7 +138,6 @@ fn Shell(user: CurrentUser) -> Element {
     let navigation = preferences.get().navigation;
     let current = route.destination();
     let shortcuts = navigation.shortcuts();
-    // Shortcuts split around the + button with Menu last
     let (before_add, after_add) = shortcuts.split_at(shortcuts.len().div_ceil(2));
     let current_is_in_menu = !current.is_some_and(|destination| shortcuts.contains(&destination));
 
@@ -153,7 +150,6 @@ fn Shell(user: CurrentUser) -> Element {
                 }
             },
 
-            // Sidebar, shown as the Menu sheet on phones
             nav {
                 id: "primary-navigation",
                 class: "sidebar",

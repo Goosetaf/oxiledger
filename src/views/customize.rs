@@ -145,7 +145,6 @@ fn DestinationRow(
     let store = use_preferences();
     let info = destination.info();
 
-    // Edit a copy and hand it to the store, which shows and saves it
     let edit = move |change: fn(&mut NavPreferences, Destination)| {
         let mut next = store.get();
         change(&mut next.navigation, destination);
