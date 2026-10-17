@@ -206,7 +206,6 @@ pub fn BankAccounts() -> Element {
                         tbody {
                             for account in accounts {
                                 tr {
-                                    // The status cell already says "Manual", so skip this one on phones.
                                     td { class: if account.is_manual { "m-hide" } else { "m-meta m-block" },
                                         div { class: "stack-sm",
                                             if account.is_manual {
