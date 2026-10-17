@@ -90,6 +90,34 @@ enum Route {
         NotFound { segments: Vec<String> },
 }
 
+impl Route {
+    /// Top bar title. Every route has to name one.
+    pub fn title(&self) -> &'static str {
+        match self {
+            Route::Login {} => "Sign In",
+            Route::Register {} => "Create Account",
+            Route::OidcLogin {} => "Sign In",
+            Route::OidcCallback {} => "Signing In",
+            Route::Dashboard {} => "Dashboard Overview",
+            Route::Accounts {} => "Accounts",
+            Route::NewAccount {} => "Accounts",
+            Route::EditAccount { .. } => "Accounts",
+            Route::Transactions {} => "Transactions",
+            Route::NewTransaction {} => "Transactions",
+            Route::NewTransactionFromBank { .. } => "Transactions",
+            Route::EditTransaction { .. } => "Transactions",
+            Route::BankAccounts {} => "Bank Accounts",
+            Route::NewBankAccount {} => "Connect a Bank",
+            Route::BankAccountDetail { .. } => "Bank Account",
+            Route::BankAccountEdit { .. } => "Bank Account",
+            Route::BankConnect { .. } => "Connect a Bank",
+            Route::BankAccountMap { .. } => "Map Bank Accounts",
+            Route::Customize {} => "Customize",
+            Route::NotFound { .. } => "Page Not Found",
+        }
+    }
+}
+
 #[component]
 fn App() -> Element {
     rsx! {

@@ -72,15 +72,6 @@ fn close_menu(mut menu_open: Signal<bool>) {
     }
 }
 
-fn topbar_title(route: &Route) -> &'static str {
-    if matches!(route, Route::Customize {}) {
-        return "Customize";
-    }
-    route
-        .destination()
-        .map_or("OxiLedger", |destination| destination.info().label)
-}
-
 /// Layout for signed-in pages: checks the session, then hands over to [`Shell`].
 #[component]
 pub fn Navbar() -> Element {
@@ -224,7 +215,7 @@ fn Shell(user: CurrentUser) -> Element {
 
             // Fixed top bar
             header { class: "topbar",
-                span { class: "topbar-title", "{topbar_title(&route)}" }
+                span { class: "topbar-title", "{route.title()}" }
                 span { class: "topbar-brand brand-title", "OxiLedger" }
             }
 
