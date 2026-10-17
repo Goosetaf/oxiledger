@@ -1,7 +1,6 @@
--- Per-user preferences: how each person has tailored the app to their own economy.
---
--- One JSON object with a key per feature (currently only "navigation"), so a
--- new preference never needs a migration. Each feature owns the shape of its
--- key and falls back to its defaults when the key is missing or unreadable.
+-- OxiLedger User Preferences Migration
+-- Stores per-user settings, such as how the navigation is arranged.
+
+-- One JSON object with a key per feature, e.g. "navigation".
 ALTER TABLE users
     ADD COLUMN preferences JSONB NOT NULL DEFAULT '{}'::jsonb;
