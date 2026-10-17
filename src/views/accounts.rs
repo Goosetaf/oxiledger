@@ -181,7 +181,6 @@ pub fn Accounts() -> Element {
                         }
                         tbody {
                             for account in accounts {
-                                // On phones, tap the row to show its actions
                                 tr { class: "row-expandable",
                                     td { class: "mono muted m-lead",
                                         {account.code.as_deref().unwrap_or("-")}
