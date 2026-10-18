@@ -4136,6 +4136,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "strum",
  "tokio",
  "tokio-cron-scheduler",
  "tower-cookies",

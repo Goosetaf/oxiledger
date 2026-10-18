@@ -222,6 +222,8 @@ table {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .nav-link {
@@ -282,7 +284,56 @@ table {
 
 .sidebar-footer {
   border-top: 1px solid var(--line);
-  padding-top: 16px;
+  padding-top: 8px;
+}
+
+/* Who is signed in, with the way out beside it. */
+.sidebar-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 14px 16px 0 24px;
+  border-top: 1px solid var(--line);
+}
+
+.account-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.account-name {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-signout {
+  flex: 0 0 auto;
+  padding: 8px;
+  color: var(--text-muted);
+  background: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 180ms ease;
+}
+
+.account-signout:hover,
+.account-signout:focus-visible {
+  color: var(--text);
+}
+
+.account-signout:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 /* Topbar */
@@ -1150,17 +1201,6 @@ table {
 }
 
 /* ============================================================
-   USER INFO (topbar)
-   ============================================================ */
-
-.nav-user {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-/* ============================================================
    RESPONSIVE
    ============================================================ */
 
@@ -1195,6 +1235,205 @@ table {
 
 
 /* ============================================================
+   CUSTOMIZE
+   ============================================================ */
+
+.icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.pref-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+/* Every group is labelled and framed. */
+.pref-group + .pref-group {
+  margin-top: 18px;
+}
+
+.pref-group > .field-label {
+  margin: 0 0 8px;
+}
+
+.pref-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+}
+
+/* The phone tab bar, one slot per shortcut with a native picker laid over each. */
+.slot-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  background: rgba(249, 115, 22, 0.05);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+  border-radius: var(--radius-md);
+}
+
+.slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 64px;
+  padding: 8px 6px;
+  color: #fb923c;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.slot + .slot {
+  border-left: 1px solid rgba(249, 115, 22, 0.18);
+}
+
+/* A small caret marks a slot as something that opens. */
+.slot::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: rotate(45deg);
+}
+
+.slot .icon {
+  width: 22px;
+  height: 22px;
+}
+
+.slot-label {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot.is-empty {
+  color: var(--text-muted);
+}
+
+.slot-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  font-size: 1rem;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.slot:has(.slot-select:disabled) {
+  opacity: 0.35;
+}
+
+.slot:has(.slot-select:disabled)::after {
+  content: none;
+}
+
+.slot-select:disabled {
+  cursor: default;
+}
+
+.slot:has(.slot-select:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.pref-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 7px 8px 7px 14px;
+}
+
+.pref-row + .pref-row {
+  border-top: 1px solid var(--line);
+}
+
+.pref-row > .icon {
+  color: var(--text-muted);
+}
+
+.pref-row.is-hidden > .icon,
+.pref-row.is-hidden > .pref-label {
+  opacity: 0.45;
+}
+
+.pref-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A row's controls sit in one segmented cluster rather than as loose icons. */
+.pref-actions {
+  display: flex;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+}
+
+.pref-actions .btn-icon {
+  width: 36px;
+  min-height: 36px;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.pref-actions .btn-icon:first-child {
+  border-top-left-radius: 7px;
+  border-bottom-left-radius: 7px;
+}
+
+.pref-actions .btn-icon:last-child {
+  border-top-right-radius: 7px;
+  border-bottom-right-radius: 7px;
+}
+
+.pref-actions .btn-icon + .btn-icon {
+  border-left: 1px solid var(--line-soft);
+}
+
+.pref-actions .btn-icon:hover:not([disabled]),
+.pref-actions .btn-icon:focus-visible:not([disabled]) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn-icon {
+  width: 32px;
+  padding: 0;
+}
+
+.btn-icon .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.pref-actions .btn-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* ============================================================
    SMALL SCREENS
    Phones are for checking balances and jotting down a transaction,
    so reading and the "new transaction" action come first; table
@@ -1204,8 +1443,21 @@ table {
 /* Phone-only shell pieces stay out of the desktop layout. */
 .tabbar,
 .topbar-brand,
-.topbar-account {
+.menu-backdrop {
   display: none;
+}
+
+@keyframes menu-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes menu-fade {
+  from {
+    opacity: 0;
+  }
 }
 
 @media (max-width: 900px) {
@@ -1230,13 +1482,92 @@ table {
     display: none;
   }
 
-  /* --- Shell: the sidebar becomes a bottom tab bar --- */
+  /* Shell. On phones the sidebar becomes the sheet the Menu tab opens. */
 
   .sidebar {
     display: none;
   }
 
-  /* The top bar scrolls away with the page; it only holds the brand and sign-out. */
+  .menu-open .sidebar {
+    top: auto;
+    right: env(safe-area-inset-right, 0px);
+    bottom: calc(var(--tabbar-height) + var(--safe-bottom));
+    left: env(safe-area-inset-left, 0px);
+    z-index: 46;
+    display: flex;
+    width: auto;
+    height: auto;
+    max-height: 72vh;
+    max-height: min(72dvh, 34rem);
+    padding: 10px 0 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: #0f1216;
+    border: 1px solid var(--line-soft);
+    border-bottom: 0;
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -24px 60px rgba(0, 0, 0, 0.5);
+    outline: none;
+    animation: menu-rise 180ms ease-out;
+  }
+
+  .menu-open .sidebar-brand {
+    display: none;
+  }
+
+  .menu-open .sidebar-nav {
+    flex: none;
+    gap: 0;
+    overflow: visible;
+  }
+
+  .menu-open .nav-link {
+    min-height: 48px;
+    padding-top: 0;
+    padding-bottom: 0;
+    color: var(--text);
+    font-size: 1rem;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .menu-open .nav-link.is-active {
+    color: #fb923c;
+  }
+
+  .menu-open .sidebar-footer {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
+  .menu-open .sidebar-account {
+    padding-top: 10px;
+    padding-bottom: 4px;
+  }
+
+  .menu-open .account-signout {
+    min-height: 44px;
+    color: var(--text);
+    font-size: 0.875rem;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: block;
+    background: rgba(3, 4, 6, 0.6);
+    animation: menu-fade 180ms ease-out;
+  }
+
+  /* The page behind the open menu stays where it is. */
+  html:has(.app-shell.menu-open) {
+    overflow: hidden;
+  }
+
+  /* The top bar scrolls away with the page and only holds the brand. */
   .topbar {
     position: static;
     height: auto;
@@ -1256,32 +1587,6 @@ table {
     display: inline;
   }
 
-  .topbar-account {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-  }
-
-  .topbar-user {
-    max-width: 38vw;
-    overflow: hidden;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .topbar-signout {
-    min-height: 44px;
-    padding: 0;
-    color: var(--text);
-    background: none;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
   .shell-inner {
     min-height: 0;
     padding-top: 8px;
@@ -1299,8 +1604,7 @@ table {
     bottom: 0;
     left: 0;
     z-index: 50;
-    display: grid;
-    grid-template-columns: 1fr 1fr auto 1fr 1fr;
+    display: flex;
     align-items: center;
     height: calc(var(--tabbar-height) + var(--safe-bottom));
     padding: 0 max(6px, env(safe-area-inset-right, 0px)) var(--safe-bottom) max(6px, env(safe-area-inset-left, 0px));
@@ -1310,18 +1614,29 @@ table {
     border-top: 1px solid var(--line);
   }
 
+  /* Shortcuts split evenly around "+", which keeps it centred however many there are. */
+  .tabbar-side {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
   .tab {
     position: relative;
     display: flex;
+    flex: 1 1 0;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 4px;
     min-width: 0;
     height: var(--tabbar-height);
+    padding: 0;
     color: var(--text-muted);
+    background: none;
     font-size: 0.6875rem;
     font-weight: 500;
+    cursor: pointer;
   }
 
   /* Same mark as the sidebar's active link, turned onto the bar's top edge. */
@@ -1340,7 +1655,7 @@ table {
     background: #f97316;
   }
 
-  .tab-icon {
+  .tab .icon {
     width: 22px;
     height: 22px;
   }
@@ -1369,14 +1684,13 @@ table {
     transform: scale(0.96);
   }
 
-  .tab-add .tab-icon {
+  .tab-add .icon {
     width: 24px;
     height: 24px;
   }
 
   .tab:focus-visible,
-  .tab-add:focus-visible,
-  .topbar-signout:focus-visible {
+  .tab-add:focus-visible {
     outline: 2px solid var(--primary);
     outline-offset: 2px;
   }
@@ -1435,6 +1749,22 @@ table {
     padding: 0 14px;
     font-size: 0.6875rem;
   }
+
+  .btn-icon {
+    width: 38px;
+    padding: 0;
+  }
+
+  .pref-row {
+    gap: 10px;
+    padding-left: 12px;
+  }
+
+  .pref-actions .btn-icon {
+    width: 38px;
+    min-height: 38px;
+  }
+
 
   /* iOS gives date inputs an intrinsic width and centres the value. */
   input[type="date"].input {
@@ -1844,6 +2174,18 @@ table {
   }
 }
 
+/* On narrow phones Customize row actions drop under the name. */
+@media (max-width: 359px) {
+  .pref-row {
+    flex-wrap: wrap;
+  }
+
+  .pref-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
+
 /* Very narrow phones: keep "Transactions" from truncating in the tab bar. */
 @media (max-width: 340px) {
   .tab {
@@ -1852,6 +2194,12 @@ table {
 
   .tab-add {
     margin: 0 2px;
+  }
+
+  .slot {
+    padding-right: 2px;
+    padding-left: 2px;
+    font-size: 0.6875rem;
   }
 }
 
@@ -1862,5 +2210,10 @@ table {
 
   .stack-rows > tbody > tr.row-expandable > .m-value::after {
     transition: none;
+  }
+
+  .menu-open .sidebar,
+  .menu-backdrop {
+    animation: none;
   }
 }

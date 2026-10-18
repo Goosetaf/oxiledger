@@ -5,6 +5,8 @@ use uuid::Uuid;
 mod bank_sync;
 mod components;
 mod models;
+mod navigation;
+mod preferences;
 #[cfg(feature = "server")]
 mod server;
 mod views;
@@ -19,6 +21,7 @@ use views::{
     bank_account_new::NewBankAccount,
     bank_accounts::BankAccounts,
     bank_connect::{BankAccountMap, BankConnect},
+    customize::Customize,
     dashboard::Dashboard,
     error::AppErrorPage,
     login::Login,
@@ -81,8 +84,37 @@ enum Route {
             BankConnect { source_id: Option<Uuid> },
             #[route("/bank-accounts/connect/map?:connection_id")]
             BankAccountMap { connection_id: Uuid },
+            #[route("/customize")]
+            Customize {},
         #[route("/:..segments")]
         NotFound { segments: Vec<String> },
+}
+
+impl Route {
+    pub fn title(&self) -> &'static str {
+        match self {
+            Route::Login {} => "Sign In",
+            Route::Register {} => "Create Account",
+            Route::OidcLogin {} => "Sign In",
+            Route::OidcCallback {} => "Signing In",
+            Route::Dashboard {} => "Dashboard Overview",
+            Route::Accounts {} => "Accounts",
+            Route::NewAccount {} => "Accounts",
+            Route::EditAccount { .. } => "Accounts",
+            Route::Transactions {} => "Transactions",
+            Route::NewTransaction {} => "Transactions",
+            Route::NewTransactionFromBank { .. } => "Transactions",
+            Route::EditTransaction { .. } => "Transactions",
+            Route::BankAccounts {} => "Bank Accounts",
+            Route::NewBankAccount {} => "Connect a Bank",
+            Route::BankAccountDetail { .. } => "Bank Account",
+            Route::BankAccountEdit { .. } => "Bank Account",
+            Route::BankConnect { .. } => "Connect a Bank",
+            Route::BankAccountMap { .. } => "Map Bank Accounts",
+            Route::Customize {} => "Customize",
+            Route::NotFound { .. } => "Page Not Found",
+        }
+    }
 }
 
 #[component]
