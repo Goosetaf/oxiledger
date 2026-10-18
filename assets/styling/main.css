@@ -1834,7 +1834,65 @@ table {
   .ledger-row:not(:last-child)::after {
     content: ", ";
   }
+}
 
+/* ============================================================
+   GETTING STARTED
+   ============================================================ */
+
+.getting-started-steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.getting-started-step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.getting-started-mark {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.getting-started-step.is-done .getting-started-mark {
+  background: var(--positive-soft);
+  color: var(--positive);
+}
+
+.getting-started-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.getting-started-step.is-done .label-strong {
+  color: var(--text-muted);
+}
+
+.getting-started-done {
+  color: var(--positive);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 /* ============================================================

@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
 
 use crate::{
+    milestones::{record_milestone, Milestone},
     models::{
         account::AccountType,
         setup::{
@@ -391,6 +392,7 @@ fn SetupWizard(context: SetupContext) -> Element {
         result,
     });
     let mut submitting = use_signal(|| false);
+    let mut skipping = use_signal(|| false);
 
     // Start each screen at the top with focus on its heading, so keyboard and
     // screen reader users are not left at the bottom of the previous one.
@@ -462,7 +464,18 @@ fn SetupWizard(context: SetupContext) -> Element {
         submitting.set(false);
     };
 
-    let handle_exit = move |_| {
+    let handle_exit = move |_| async move {
+        // Skipping counts as done, so the dashboard stops sending them back here
+        if first_run {
+            wizard.error.set(None);
+            skipping.set(true);
+            let skipped = record_milestone(Milestone::SetupSkipped).await;
+            skipping.set(false);
+            if let Err(err) = skipped {
+                wizard.error.set(Some(err.to_string()));
+                return;
+            }
+        }
         nav.push(crate::Route::Dashboard {});
     };
 
@@ -474,6 +487,7 @@ fn SetupWizard(context: SetupContext) -> Element {
         .position(|(path_stage, _)| *path_stage == stage)
         .unwrap_or_default();
     let finished = wizard.result.read().is_some();
+    let busy = submitting() || skipping();
 
     let primary_label = if stage.next(with_bank).is_some() {
         "Continue"
@@ -501,7 +515,7 @@ fn SetupWizard(context: SetupContext) -> Element {
                     button {
                         class: "btn btn-secondary btn-sm",
                         r#type: "button",
-                        disabled: submitting(),
+                        disabled: busy,
                         onclick: handle_exit,
                         if first_run {
                             "Skip setup"
@@ -569,7 +583,7 @@ fn SetupWizard(context: SetupContext) -> Element {
                             button {
                                 class: "btn btn-secondary",
                                 r#type: "button",
-                                disabled: submitting(),
+                                disabled: busy,
                                 onclick: handle_advanced,
                                 "Advanced setup"
                             }
@@ -577,7 +591,7 @@ fn SetupWizard(context: SetupContext) -> Element {
                             button {
                                 class: "btn btn-secondary",
                                 r#type: "button",
-                                disabled: submitting(),
+                                disabled: busy,
                                 onclick: handle_back,
                                 "Back"
                             }
@@ -585,7 +599,7 @@ fn SetupWizard(context: SetupContext) -> Element {
                         button {
                             class: "btn btn-primary",
                             r#type: "button",
-                            disabled: submitting(),
+                            disabled: busy,
                             onclick: handle_next,
                             "{primary_label}"
                         }

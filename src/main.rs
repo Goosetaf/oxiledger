@@ -4,6 +4,7 @@ use uuid::Uuid;
 #[cfg(feature = "server")]
 mod bank_sync;
 mod components;
+mod milestones;
 mod models;
 mod navigation;
 mod preferences;

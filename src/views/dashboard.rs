@@ -1,4 +1,7 @@
-use crate::models::transaction::AccountBalance;
+use crate::{
+    milestones::{get_progress, record_milestone, Hint, Milestone, Progress},
+    models::transaction::AccountBalance,
+};
 use dioxus::prelude::*;
 use rust_decimal::Decimal;
 
@@ -58,6 +61,15 @@ async fn get_account_balances() -> Result<Vec<AccountBalance>, ServerFnError> {
 #[component]
 pub fn Dashboard() -> Element {
     let balances = use_loader(get_account_balances)?.read().clone();
+    // Loaded after the balances, as two server futures at once stall the server render.
+    // If it fails the dashboard still works, just without the checklist.
+    let progress = use_server_future(get_progress)?().and_then(Result::ok);
+
+    if progress.as_ref().is_some_and(Progress::needs_setup) {
+        return rsx! {
+            OpenSetup {}
+        };
+    }
 
     let active_accounts = balances.len();
     let positive_accounts = balances
@@ -84,6 +96,10 @@ pub fn Dashboard() -> Element {
                             "Overview of your account balances and metrics."
                         }
                     }
+                }
+
+                if let Some(progress) = progress {
+                    GettingStarted { progress }
                 }
 
                 div { class: "metric-grid",
@@ -154,6 +170,131 @@ pub fn Dashboard() -> Element {
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Sends a new user to setup, which they can finish or skip.
+#[component]
+fn OpenSetup() -> Element {
+    let nav = use_navigator();
+
+    use_effect(move || {
+        nav.replace(crate::Route::Setup {});
+    });
+
+    rsx! {
+        div { class: "app-container",
+            div { class: "message message-info", "Opening setup..." }
+        }
+    }
+}
+
+struct Step {
+    title: &'static str,
+    detail: &'static str,
+    done: bool,
+    action: &'static str,
+    to: crate::Route,
+}
+
+/// First steps for a new ledger, shown until they are all done or the user hides them.
+#[component]
+fn GettingStarted(progress: Progress) -> Element {
+    let mut hidden = use_signal(|| progress.has(Milestone::Dismissed(Hint::GettingStarted)));
+    let mut error = use_signal(|| None::<String>);
+
+    let mut steps = vec![Step {
+        title: "Set up your accounts",
+        detail: "Pick a starter set or create your own",
+        done: progress.has_accounts,
+        action: "Set up",
+        to: crate::Route::Setup {},
+    }];
+    if progress.bank_sync_available {
+        steps.push(Step {
+            title: "Connect your bank",
+            detail: "Import transactions automatically",
+            done: progress.bank_connected,
+            action: "Connect",
+            to: crate::Route::BankConnect {
+                source_id: None,
+                provider: None,
+            },
+        });
+    }
+    steps.push(Step {
+        title: "Record your first transaction",
+        detail: if progress.bank_sync_available {
+            "Book one from your bank or enter it by hand"
+        } else {
+            "Enter a purchase, payment or transfer"
+        },
+        done: progress.has_transactions,
+        action: "Add",
+        to: crate::Route::NewTransaction {},
+    });
+
+    let total = steps.len();
+    let done = steps.iter().filter(|step| step.done).count();
+    if hidden() || done == total {
+        return rsx! {};
+    }
+
+    let handle_hide = move |_| async move {
+        hidden.set(true);
+        error.set(None);
+        if let Err(err) = record_milestone(Milestone::Dismissed(Hint::GettingStarted)).await {
+            hidden.set(false);
+            error.set(Some(format!("Couldn't hide the checklist. {err}")));
+        }
+    };
+
+    rsx! {
+        section {
+            class: "section-card getting-started",
+            aria_labelledby: "getting-started-title",
+            div { class: "section-header",
+                div {
+                    h2 { id: "getting-started-title", class: "section-title", "Getting started" }
+                    p { class: "supporting-text", "{done} of {total} done" }
+                }
+                button {
+                    class: "btn btn-secondary btn-sm",
+                    r#type: "button",
+                    onclick: handle_hide,
+                    "Hide"
+                }
+            }
+
+            if let Some(err) = error() {
+                div { class: "message message-error", role: "alert", "{err}" }
+            }
+
+            ol { class: "getting-started-steps",
+                for (index , step) in steps.into_iter().enumerate() {
+                    li { class: if step.done { "getting-started-step is-done" } else { "getting-started-step" },
+                        span {
+                            class: "getting-started-mark",
+                            aria_hidden: "true",
+                            if step.done {
+                                "✓"
+                            } else {
+                                "{index + 1}"
+                            }
+                        }
+                        div { class: "getting-started-copy",
+                            span { class: "label-strong", "{step.title}" }
+                            span { class: "supporting-text", "{step.detail}" }
+                        }
+                        if step.done {
+                            span { class: "getting-started-done", "Done" }
+                        } else {
+                            Link { class: "btn btn-primary btn-sm", to: step.to, "{step.action}" }
                         }
                     }
                 }

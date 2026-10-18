@@ -4,9 +4,12 @@ use dioxus::prelude::ServerFnError;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::{
-    account::AccountType,
-    setup::{account_key, SetupRequest, SetupResult, MAX_SETUP_ACCOUNTS},
+use crate::{
+    milestones::{self, Milestone},
+    models::{
+        account::AccountType,
+        setup::{account_key, SetupRequest, SetupResult, MAX_SETUP_ACCOUNTS},
+    },
 };
 
 fn db_error(err: sqlx::Error) -> ServerFnError {
@@ -173,6 +176,10 @@ pub async fn apply_setup(
 
         bank_account_id = Some(id);
     }
+
+    milestones::record(&mut *tx, user_id, Milestone::SetupFinished)
+        .await
+        .map_err(db_error)?;
 
     tx.commit().await.map_err(db_error)?;
 
