@@ -147,14 +147,36 @@ pub async fn apply_setup(
     let mut bank_account_existed = false;
 
     if let Some((name, currency, linked_account_name)) = bank_account {
-        // Reuse an unconnected bank account with the same name, so running setup again doesn't add another
+        let internal_account_id = match linked_account_name {
+            // An exact match wins over one that only differs in case
+            Some(linked_name) => sqlx::query_scalar!(
+                "SELECT id FROM accounts
+                 WHERE user_id = $1 AND account_type = 'Asset' AND LOWER(name) = LOWER($2)
+                 ORDER BY name = $2 DESC, created_at
+                 LIMIT 1",
+                user_id,
+                linked_name
+            )
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(db_error)?,
+            None => None,
+        };
+
+        // Reuse an identical unconnected bank account, so running setup again doesn't add another
         let existing_id = sqlx::query_scalar!(
             "SELECT id FROM bank_accounts
-             WHERE user_id = $1 AND bank_connection_id IS NULL AND LOWER(TRIM(name)) = LOWER($2)
+             WHERE user_id = $1
+               AND bank_connection_id IS NULL
+               AND LOWER(TRIM(name)) = LOWER($2)
+               AND UPPER(currency) = $3
+               AND internal_account_id IS NOT DISTINCT FROM $4
              ORDER BY created_at
              LIMIT 1",
             user_id,
-            name
+            name,
+            currency,
+            internal_account_id
         )
         .fetch_optional(&mut *tx)
         .await
@@ -163,36 +185,18 @@ pub async fn apply_setup(
         bank_account_existed = existing_id.is_some();
         let id = match existing_id {
             Some(id) => id,
-            None => {
-                let internal_account_id = match linked_account_name {
-                    // An exact match wins over one that only differs in case
-                    Some(linked_name) => sqlx::query_scalar!(
-                        "SELECT id FROM accounts
-                         WHERE user_id = $1 AND account_type = 'Asset' AND LOWER(name) = LOWER($2)
-                         ORDER BY name = $2 DESC, created_at
-                         LIMIT 1",
-                        user_id,
-                        linked_name
-                    )
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(db_error)?,
-                    None => None,
-                };
-
-                sqlx::query_scalar!(
-                    "INSERT INTO bank_accounts (user_id, internal_account_id, name, currency, is_manual)
-                     VALUES ($1, $2, $3, $4, TRUE)
-                     RETURNING id",
-                    user_id,
-                    internal_account_id,
-                    name,
-                    currency
-                )
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(db_error)?
-            }
+            None => sqlx::query_scalar!(
+                "INSERT INTO bank_accounts (user_id, internal_account_id, name, currency, is_manual)
+                 VALUES ($1, $2, $3, $4, TRUE)
+                 RETURNING id",
+                user_id,
+                internal_account_id,
+                name,
+                currency
+            )
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(db_error)?,
         };
 
         bank_account_id = Some(id);

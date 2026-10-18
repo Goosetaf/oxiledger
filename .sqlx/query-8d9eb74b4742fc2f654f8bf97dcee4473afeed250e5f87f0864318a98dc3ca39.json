@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM accounts\n                 WHERE user_id = $1 AND account_type = 'Asset' AND LOWER(name) = LOWER($2)\n                 ORDER BY name = $2 DESC, created_at\n                 LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8d9eb74b4742fc2f654f8bf97dcee4473afeed250e5f87f0864318a98dc3ca39"
+}

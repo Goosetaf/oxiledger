@@ -50,7 +50,7 @@ pub struct SetupResult {
     /// Accounts left alone because one with the same name and type already existed.
     pub skipped_accounts: u32,
     pub bank_account_id: Option<Uuid>,
-    /// Set when a bank account with the same name already existed and was used instead.
+    /// Set when an identical bank account already existed and was used instead.
     pub bank_account_existed: bool,
 }
 

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM bank_accounts\n             WHERE user_id = $1\n               AND bank_connection_id IS NULL\n               AND LOWER(TRIM(name)) = LOWER($2)\n               AND UPPER(currency) = $3\n               AND internal_account_id IS NOT DISTINCT FROM $4\n             ORDER BY created_at\n             LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9655c0cdcfd0a79a9aa770e8e3776827a07715fbe1865d5330ac29425c549b7a"
+}
