@@ -26,7 +26,7 @@ pub fn AccountForm(
             div { class: "page-stack",
                 div { class: "section-header",
                     div {
-                        h2 { class: "section-title", "{heading}" }
+                        h1 { class: "section-title", "{heading}" }
                         p { class: "section-subtitle", "{subtitle}" }
                     }
                 }

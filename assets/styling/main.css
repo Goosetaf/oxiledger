@@ -573,6 +573,10 @@ table {
   background: var(--warning-soft);
 }
 
+.chip-neutral {
+  background: rgba(255, 255, 255, 0.05);
+}
+
 /* ============================================================
    BUTTONS
    ============================================================ */
@@ -633,6 +637,17 @@ table {
 
 .btn-danger:hover:not([disabled]),
 .btn-danger:focus-visible:not([disabled]) {
+  filter: brightness(1.1);
+}
+
+.btn-warning {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: rgba(246, 197, 107, 0.22);
+}
+
+.btn-warning:hover:not([disabled]),
+.btn-warning:focus-visible:not([disabled]) {
   filter: brightness(1.1);
 }
 
@@ -757,6 +772,18 @@ table {
   border-color: rgba(255, 181, 156, 0.16);
 }
 
+.message-success {
+  color: var(--positive);
+  background: var(--positive-soft);
+  border-color: rgba(136, 217, 130, 0.16);
+}
+
+.message-warning {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-color: rgba(246, 197, 107, 0.16);
+}
+
 /* ============================================================
    DATA TABLES
    ============================================================ */
@@ -769,8 +796,6 @@ table {
 }
 
 .data-table {
-  min-width: 720px;
-
   thead {
     background: rgba(255, 255, 255, 0.02);
   }
@@ -1038,13 +1063,14 @@ table {
   font-size: 0.86rem;
 }
 
+/* Composer row that came from an imported bank transaction (read-only). */
+.data-table tr.entry-row-locked {
+  background: rgba(255, 181, 156, 0.06);
+}
+
 /* ============================================================
    TRANSACTION TABLE
    ============================================================ */
-
-.transaction-table {
-  min-width: 880px;
-}
 
 .transaction-summary-cell {
   padding: 0 !important;
@@ -1069,7 +1095,7 @@ table {
   justify-content: flex-end;
 }
 
-.transaction-detail-row td {
+.transaction-detail-row > td {
   padding: 0 !important;
   border-top: none !important;
 }
@@ -1154,23 +1180,275 @@ table {
   .entry-line {
     grid-template-columns: 1fr;
   }
+
+  /* Let row actions wrap, and tighten cells, so wide tables still fit beside the sidebar. */
+  .data-table .actions-row {
+    flex-wrap: wrap;
+  }
+
+  .data-table thead th,
+  .data-table tbody td {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
 }
 
-@media (max-width: 768px) {
+
+/* ============================================================
+   SMALL SCREENS
+   Phones are for checking balances and jotting down a transaction,
+   so reading and the "new transaction" action come first; table
+   chrome and management extras step back.
+   ============================================================ */
+
+/* Phone-only shell pieces stay out of the desktop layout. */
+.tabbar,
+.topbar-brand,
+.topbar-account {
+  display: none;
+}
+
+@media (max-width: 900px) {
   :root {
     --sidebar-width: 0px;
+    --tabbar-height: 60px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --gutter-left: max(16px, env(safe-area-inset-left, 0px));
+    --gutter-right: max(16px, env(safe-area-inset-right, 0px));
   }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .hide-on-mobile {
+    display: none;
+  }
+
+  /* --- Shell: the sidebar becomes a bottom tab bar --- */
 
   .sidebar {
     display: none;
   }
 
+  /* The top bar scrolls away with the page; it only holds the brand and sign-out. */
   .topbar {
-    left: 0;
+    position: static;
+    height: auto;
+    min-height: 52px;
+    padding: 0 var(--gutter-right) 0 var(--gutter-left);
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-bottom: 0;
+  }
+
+  .topbar-title {
+    display: none;
+  }
+
+  .topbar-brand {
+    display: inline;
+  }
+
+  .topbar-account {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .topbar-user {
+    max-width: 38vw;
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar-signout {
+    min-height: 44px;
+    padding: 0;
+    color: var(--text);
+    background: none;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .shell-inner {
+    min-height: 0;
+    padding-top: 8px;
+    padding-bottom: calc(var(--tabbar-height) + var(--safe-bottom) + 32px);
   }
 
   .app-container {
-    width: min(calc(100% - 32px), var(--content-max));
+    width: auto;
+    margin: 0 var(--gutter-right) 0 var(--gutter-left);
+  }
+
+  .tabbar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    display: grid;
+    grid-template-columns: 1fr 1fr auto 1fr 1fr;
+    align-items: center;
+    height: calc(var(--tabbar-height) + var(--safe-bottom));
+    padding: 0 max(6px, env(safe-area-inset-right, 0px)) var(--safe-bottom) max(6px, env(safe-area-inset-left, 0px));
+    background: rgba(5, 6, 8, 0.97);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-top: 1px solid var(--line);
+  }
+
+  .tab {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    height: var(--tabbar-height);
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+    font-weight: 500;
+  }
+
+  /* Same mark as the sidebar's active link, turned onto the bar's top edge. */
+  .tab.is-active {
+    color: #fb923c;
+  }
+
+  .tab.is-active::before {
+    content: "";
+    position: absolute;
+    top: -1px;
+    left: 50%;
+    width: 28px;
+    height: 2px;
+    margin-left: -14px;
+    background: #f97316;
+  }
+
+  .tab-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .tab-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The one filled control in the chrome: start a new transaction from anywhere. */
+  .tab-add {
+    display: grid;
+    place-items: center;
+    width: 46px;
+    height: 46px;
+    margin: 0 8px;
+    color: var(--on-primary-container);
+    background: var(--primary-container);
+    border: 1px solid rgba(255, 181, 156, 0.2);
+    border-radius: 14px;
+  }
+
+  .tab-add:active {
+    transform: scale(0.96);
+  }
+
+  .tab-add .tab-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .tab:focus-visible,
+  .tab-add:focus-visible,
+  .topbar-signout:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  /* --- Page headers --- */
+
+  h1.section-title {
+    font-size: 1.375rem;
+    letter-spacing: -0.025em;
+  }
+
+  .section-header {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    margin-bottom: 10px;
+  }
+
+  .page-stack > .section-header {
+    margin-bottom: 0;
+  }
+
+  .section-header > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .section-subtitle {
+    overflow-wrap: anywhere;
+  }
+
+  .actions-row {
+    flex-wrap: wrap;
+  }
+
+  .section-header > .actions-row {
+    flex: 1 1 100%;
+  }
+
+  .section-header > .actions-row > .btn {
+    flex: 1 1 auto;
+  }
+
+  /* --- Controls sized for thumbs --- */
+
+  .btn,
+  .input,
+  .select,
+  .textarea {
+    min-height: 44px;
+  }
+
+  .btn-sm {
+    min-height: 38px;
+    padding: 0 14px;
+    font-size: 0.6875rem;
+  }
+
+  /* iOS gives date inputs an intrinsic width and centres the value. */
+  input[type="date"].input {
+    min-width: 0;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input[type="date"].input::-webkit-date-and-time-value {
+    text-align: left;
+  }
+
+  .form-grid.two-up {
+    grid-template-columns: 1fr;
   }
 
   .auth-panel,
@@ -1181,10 +1459,408 @@ table {
     padding: 16px;
   }
 
-  .btn,
-  .input,
-  .select,
-  .textarea {
-    min-height: 40px;
+  .message {
+    overflow-wrap: anywhere;
+  }
+
+  .filter-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .filter-tabs .btn {
+    padding: 0 4px;
+    font-size: 0.78rem;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
+  }
+
+  /* --- Stat cards collapse into one summary, label left and figure right --- */
+
+  .metric-grid {
+    gap: 0;
+    overflow: hidden;
+    background: var(--glass-bg);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-card);
+  }
+
+  .metric-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    column-gap: 12px;
+    padding: 12px 16px;
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-radius: 0;
+  }
+
+  .metric-card::before {
+    content: none;
+  }
+
+  .metric-card + .metric-card {
+    border-top: 1px solid var(--line);
+  }
+
+  .metric-label {
+    flex: 1 1 0;
+    margin: 0;
+  }
+
+  .metric-value {
+    font-size: 1.0625rem;
+    letter-spacing: -0.01em;
+    text-align: right;
+  }
+
+  .metric-card > .tiny-text {
+    flex: 0 0 100%;
+    margin: 2px 0 0;
+    font-size: 0.75rem;
+  }
+
+  /* --- Tables become lists ---
+     A row lays out as: [lead] title ........ value
+                        meta meta
+                        actions
+     The two pseudo-elements are full-width line breaks between those groups. */
+
+  .stack-rows,
+  .stack-rows > tbody {
+    display: block;
+  }
+
+  .stack-rows > thead {
+    display: none;
+  }
+
+  .stack-rows > tbody > tr {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 10px;
+    padding: 13px 16px;
+    border-top: 1px solid var(--line);
+  }
+
+  .stack-rows > tbody > tr:first-child {
+    border-top: 0;
+  }
+
+  .stack-rows > tbody > tr::before,
+  .stack-rows > tbody > tr::after {
+    content: "";
+    flex: 0 0 100%;
+    height: 0;
+  }
+
+  .stack-rows > tbody > tr::before {
+    order: 3;
+  }
+
+  .stack-rows > tbody > tr::after {
+    order: 5;
+  }
+
+  .stack-rows > tbody > tr > td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .stack-rows .m-lead {
+    flex: 0 0 auto;
+    order: 0;
+    min-width: 2.75rem;
+    font-size: 0.875rem;
+  }
+
+  .stack-rows .m-title {
+    flex: 1 1 0;
+    order: 1;
+    overflow-wrap: anywhere;
+  }
+
+  .stack-rows .m-value {
+    flex: 0 0 auto;
+    order: 2;
+    max-width: 62%;
+    text-align: right;
+  }
+
+  .stack-rows .m-meta {
+    order: 4;
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+  }
+
+  .stack-rows .m-block {
+    flex-basis: 100%;
+  }
+
+  /* Keep meta under the title when a code column leads the row. */
+  .stack-rows > tbody > tr:has(> .m-lead) > .m-meta {
+    margin-left: calc(2.75rem + 10px);
+  }
+
+  .stack-rows .m-actions {
+    flex: 0 0 100%;
+    order: 6;
+    margin-top: 12px;
+  }
+
+  .stack-rows .m-hide {
+    display: none;
+  }
+
+  /* The column header is gone, so cells that need one carry it inline. */
+  .stack-rows td[data-label]::before {
+    content: attr(data-label) " ";
+  }
+
+  .stack-rows .stack-sm {
+    gap: 2px;
+  }
+
+  .stack-rows .m-meta .stack-sm {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .stack-rows .tiny-text {
+    margin-top: 0;
+  }
+
+  .stack-rows .m-actions .actions-row {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  /* Keep destructive actions a thumb's width away from the rest. */
+  .stack-rows .m-actions .btn-danger {
+    margin-left: auto;
+  }
+
+  /* --- Rows that open on tap ---
+     Same hidden-checkbox toggle the transactions table already uses. The
+     label's ::after stretches over the whole row to make it one tap target. */
+
+  .stack-rows .transaction-row-button {
+    display: inline;
+    padding: 0;
+  }
+
+  .stack-rows .m-title .transaction-row-button::after,
+  .stack-rows .row-toggle-label::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  .stack-rows > tbody > tr.row-expandable {
+    padding-right: 40px;
+  }
+
+  .stack-rows > tbody > tr.row-expandable > .m-value::after {
+    content: "";
+    position: absolute;
+    top: 17px;
+    right: 18px;
+    width: 7px;
+    height: 7px;
+    border-right: 1.5px solid var(--text-muted);
+    border-bottom: 1.5px solid var(--text-muted);
+    transform: rotate(45deg);
+    transition: transform 160ms ease;
+  }
+
+  .stack-rows > tbody > tr.row-expandable:has(.row-toggle:checked) > .m-value::after {
+    transform: translateY(4px) rotate(-135deg);
+  }
+
+  .stack-rows > tbody > tr.row-expandable:has(.row-toggle:checked) {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  /* Actions sit above the row-wide tap target, and stay folded until it opens. */
+  .stack-rows > tbody > tr.row-expandable > .m-actions {
+    position: relative;
+    z-index: 1;
+  }
+
+  .stack-rows > tbody > tr.row-expandable:has(.row-toggle:not(:checked)) > .m-actions {
+    display: none;
+  }
+
+  .stack-rows > tbody > tr.transaction-detail-row {
+    display: block;
+    padding: 0;
+    border-top: 0;
+  }
+
+  .transaction-detail-panel {
+    padding: 0 16px 14px;
+  }
+
+  .transaction-entry-table {
+    font-size: 0.875rem;
+  }
+
+  .transaction-entry-table thead th:first-child,
+  .transaction-entry-table tbody td:first-child {
+    padding-left: 0;
+  }
+
+  .transaction-entry-table thead th:last-child,
+  .transaction-entry-table tbody td:last-child {
+    padding-right: 0;
+  }
+
+  /* Keep the destructive action a thumb's width away from Edit. */
+  .transaction-detail-panel .actions-row {
+    justify-content: space-between;
+  }
+
+  /* --- Transaction composer: each line is a card --- */
+
+  .data-table.entry-table,
+  .data-table.entry-table tbody {
+    display: block;
+  }
+
+  .data-table.entry-table thead {
+    display: none;
+  }
+
+  .data-table.entry-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "account account"
+      "debit   credit"
+      "memo    memo"
+      "bank    bank";
+    gap: 12px 10px;
+    margin-bottom: 10px;
+    padding: 14px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius-lg);
+  }
+
+  .data-table.entry-table tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .data-table.entry-table tr.entry-row-locked {
+    background: rgba(255, 181, 156, 0.06);
+    border-color: rgba(255, 181, 156, 0.28);
+  }
+
+  .data-table.entry-table td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .data-table.entry-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 6px;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .entry-account {
+    grid-area: account;
+  }
+
+  .entry-debit {
+    grid-area: debit;
+  }
+
+  .entry-credit {
+    grid-area: credit;
+  }
+
+  .entry-memo {
+    grid-area: memo;
+  }
+
+  /* The placeholder already says "Optional note"; skip the label to keep cards short. */
+  .data-table.entry-table td.entry-memo::before {
+    content: none;
+  }
+
+  /* The remove button shares the last row, tucked into its right end. */
+  .data-table.entry-table td.entry-bank {
+    grid-area: bank;
+    padding-right: 104px;
+  }
+
+  .entry-bank .tiny-text {
+    display: block;
+    margin: 0;
+  }
+
+  .entry-remove {
+    grid-row: 4;
+    grid-column: 2;
+    align-self: end;
+    justify-self: end;
+  }
+
+  /* "Add line" belongs after the lines once they stack. */
+  .entry-add {
+    order: 1;
+  }
+
+  .composer-summary {
+    order: 2;
+  }
+
+  .summary-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .summary-pill:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Very narrow phones: keep "Transactions" from truncating in the tab bar. */
+@media (max-width: 340px) {
+  .tab {
+    font-size: 0.625rem;
+  }
+
+  .tab-add {
+    margin: 0 2px;
+  }
+}
+
+@media (max-width: 900px) and (prefers-reduced-motion: reduce) {
+  .tab-add:active {
+    transform: none;
+  }
+
+  .stack-rows > tbody > tr.row-expandable > .m-value::after {
+    transition: none;
   }
 }

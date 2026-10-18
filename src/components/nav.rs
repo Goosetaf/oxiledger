@@ -1,5 +1,9 @@
 use crate::views::error::LoginRedirectNotice;
 use dioxus::prelude::*;
+use dioxus_free_icons::{
+    icons::ld_icons::{LdArrowLeftRight, LdLandmark, LdLayers, LdLayoutDashboard, LdPlus},
+    Icon,
+};
 
 #[get("/api/auth/me")]
 async fn get_current_user() -> Result<Option<String>, ServerFnError> {
@@ -51,21 +55,39 @@ async fn logout_action() -> Result<(), ServerFnError> {
     Ok(())
 }
 
+fn is_nav_item_active(route: &crate::Route, item: &str) -> bool {
+    matches!(
+        (route, item),
+        (crate::Route::Dashboard {}, "dashboard")
+            | (crate::Route::Accounts {}, "accounts")
+            | (crate::Route::NewAccount {}, "accounts")
+            | (crate::Route::EditAccount { .. }, "accounts")
+            | (crate::Route::Transactions {}, "transactions")
+            | (crate::Route::NewTransaction {}, "transactions")
+            | (crate::Route::EditTransaction { .. }, "transactions")
+            | (crate::Route::NewTransactionFromBank { .. }, "transactions")
+            | (crate::Route::BankAccounts {}, "bank_accounts")
+            | (crate::Route::NewBankAccount {}, "bank_accounts")
+            | (crate::Route::BankAccountDetail { .. }, "bank_accounts")
+            | (crate::Route::BankAccountEdit { .. }, "bank_accounts")
+            | (crate::Route::BankConnect { .. }, "bank_accounts")
+            | (crate::Route::BankAccountMap { .. }, "bank_accounts")
+    )
+}
+
 fn active_nav_class(route: &crate::Route, item: &str) -> &'static str {
-    match (route, item) {
-        (crate::Route::Dashboard {}, "dashboard") => "nav-link is-active",
-        (crate::Route::Accounts {}, "accounts")
-        | (crate::Route::NewAccount {}, "accounts")
-        | (crate::Route::EditAccount { .. }, "accounts") => "nav-link is-active",
-        (crate::Route::Transactions {}, "transactions")
-        | (crate::Route::NewTransaction {}, "transactions")
-        | (crate::Route::EditTransaction { .. }, "transactions")
-        | (crate::Route::NewTransactionFromBank { .. }, "transactions") => "nav-link is-active",
-        (crate::Route::BankAccounts {}, "bank_accounts")
-        | (crate::Route::BankAccountDetail { .. }, "bank_accounts")
-        | (crate::Route::BankConnect { .. }, "bank_accounts")
-        | (crate::Route::BankAccountMap { .. }, "bank_accounts") => "nav-link is-active",
-        _ => "nav-link",
+    if is_nav_item_active(route, item) {
+        "nav-link is-active"
+    } else {
+        "nav-link"
+    }
+}
+
+fn active_tab_class(route: &crate::Route, item: &str) -> &'static str {
+    if is_nav_item_active(route, item) {
+        "tab is-active"
+    } else {
+        "tab"
     }
 }
 
@@ -93,13 +115,12 @@ pub fn Navbar() -> Element {
     let nav = use_navigator();
     let route = use_route::<crate::Route>();
 
-    let handle_logout = move |_| {
-        let nav = nav.clone();
-        async move {
+    let handle_logout = use_callback(move |_: MouseEvent| {
+        spawn(async move {
             let _ = logout_action().await;
             nav.push(crate::Route::Login {});
-        }
-    };
+        });
+    });
 
     let username = match user_future() {
         Some(Ok(Some(name))) => name,
@@ -174,6 +195,16 @@ pub fn Navbar() -> Element {
             // Fixed top bar
             header { class: "topbar",
                 span { class: "topbar-title", "{topbar_title(&route)}" }
+                span { class: "topbar-brand brand-title", "OxiLedger" }
+                div { class: "topbar-account",
+                    span { class: "topbar-user", "{username}" }
+                    button {
+                        class: "topbar-signout",
+                        r#type: "button",
+                        onclick: handle_logout,
+                        "Sign out"
+                    }
+                }
             }
 
             // Main content
@@ -185,6 +216,40 @@ pub fn Navbar() -> Element {
                         }
                     },
                     Outlet::<crate::Route> {}
+                }
+            }
+
+            // Bottom tab bar, shown instead of the sidebar on small screens
+            nav { class: "tabbar", aria_label: "Primary",
+                Link {
+                    to: crate::Route::Dashboard {},
+                    class: active_tab_class(&route, "dashboard"),
+                    Icon { class: "tab-icon", icon: LdLayoutDashboard }
+                    span { class: "tab-label", "Dashboard" }
+                }
+                Link {
+                    to: crate::Route::Transactions {},
+                    class: active_tab_class(&route, "transactions"),
+                    Icon { class: "tab-icon", icon: LdArrowLeftRight }
+                    span { class: "tab-label", "Transactions" }
+                }
+                Link {
+                    to: crate::Route::NewTransaction {},
+                    class: "tab-add",
+                    aria_label: "New transaction",
+                    Icon { class: "tab-icon", icon: LdPlus }
+                }
+                Link {
+                    to: crate::Route::Accounts {},
+                    class: active_tab_class(&route, "accounts"),
+                    Icon { class: "tab-icon", icon: LdLayers }
+                    span { class: "tab-label", "Accounts" }
+                }
+                Link {
+                    to: crate::Route::BankAccounts {},
+                    class: active_tab_class(&route, "bank_accounts"),
+                    Icon { class: "tab-icon", icon: LdLandmark }
+                    span { class: "tab-label", "Banks" }
                 }
             }
         }

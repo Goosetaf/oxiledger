@@ -90,6 +90,13 @@ fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
+        // Lets the bottom bar keep clear of the iPhone home indicator
+        document::Meta {
+            name: "viewport",
+            content: "width=device-width, initial-scale=1, viewport-fit=cover",
+        }
+        // Colours the phone browser's toolbar to match the app
+        document::Meta { name: "theme-color", content: "#090b0e" }
         Router::<Route> {}
     }
 }

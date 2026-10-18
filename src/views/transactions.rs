@@ -227,16 +227,19 @@ pub fn Transactions() -> Element {
                 div { class: "section-header",
                     div {
                         h1 { class: "section-title", "Transactions" }
-                        p { class: "section-subtitle", "Review activity and create manual entries." }
+                        p { class: "section-subtitle hide-on-mobile",
+                            "Review activity and create manual entries."
+                        }
                     }
+                    // Phones use bottom bar instead
                     Link {
-                        class: "btn btn-primary",
+                        class: "btn btn-primary hide-on-mobile",
                         to: crate::Route::NewTransaction {},
                         "New transaction"
                     }
                 }
 
-                div { class: "metric-grid",
+                div { class: "metric-grid hide-on-mobile",
                     article { class: "metric-card",
                         p { class: "metric-label", "Transactions" }
                         p { class: "metric-value", "{transaction_count}" }
@@ -266,7 +269,7 @@ pub fn Transactions() -> Element {
                             }
                         }
                     } else {
-                        table { class: "data-table transaction-table",
+                        table { class: "data-table transaction-table stack-rows",
                             thead {
                                 tr {
                                     th { "Date" }
@@ -277,29 +280,29 @@ pub fn Transactions() -> Element {
                             }
                             tbody {
                                 for (txn_id , txn , total) in transaction_rows {
-                                    tr { class: "transaction-summary-row",
-                                        td { class: "transaction-summary-cell mono muted",
+                                    tr { class: "transaction-summary-row row-expandable",
+                                        td { class: "transaction-summary-cell mono muted m-meta",
                                             label {
                                                 class: "transaction-row-button",
                                                 r#for: format!("txn-{}-toggle", txn_id),
                                                 "{txn.date}"
                                             }
                                         }
-                                        td { class: "transaction-summary-cell label-strong",
+                                        td { class: "transaction-summary-cell label-strong m-title",
                                             label {
                                                 class: "transaction-row-button",
                                                 r#for: format!("txn-{}-toggle", txn_id),
                                                 "{txn.description}"
                                             }
                                         }
-                                        td { class: "transaction-summary-cell muted",
+                                        td { class: "transaction-summary-cell muted m-meta",
                                             label {
                                                 class: "transaction-row-button",
                                                 r#for: format!("txn-{}-toggle", txn_id),
                                                 {txn.reference.clone().unwrap_or_else(|| "".to_string())}
                                             }
                                         }
-                                        td { class: "transaction-summary-cell col-right mono label-strong",
+                                        td { class: "transaction-summary-cell col-right mono label-strong m-value",
                                             label {
                                                 class: "transaction-row-button",
                                                 r#for: format!("txn-{}-toggle", txn_id),
@@ -307,7 +310,7 @@ pub fn Transactions() -> Element {
                                             }
                                             input {
                                                 id: format!("txn-{}-toggle", txn.id),
-                                                class: "transaction-toggle",
+                                                class: "transaction-toggle row-toggle",
                                                 r#type: "checkbox",
                                                 r#autocomplete: "off",
                                                 hidden: true,
