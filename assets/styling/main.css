@@ -1373,8 +1373,7 @@ table {
   margin-bottom: 10px;
 }
 
-/* A set of options to pick one from, each a radio with a title and a line of
-   explanation. An option can hold extra fields that belong to it. */
+/* Radio options with a title and description, which can hold extra fields of their own. */
 .choice-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1790,7 +1789,7 @@ table {
     grid-template-columns: 1fr;
   }
 
-  /* Room for the buttons: the marker keeps its chevron and drops its words. */
+  /* The marker keeps its chevron and drops its words to leave room for the buttons. */
   .setup-more {
     gap: 0;
     font-size: 0;
@@ -1800,7 +1799,7 @@ table {
     padding-left: 16px;
   }
 
-  /* No room for columns of codes: each group becomes a line of names. */
+  /* Too narrow for columns of codes, so each group becomes a line of names. */
   .ledger-sides {
     flex-direction: column;
   }

@@ -72,9 +72,8 @@ async fn complete_setup(req: SetupRequest) -> Result<SetupResult, ServerFnError>
     Err(ServerFnError::new("Server only"))
 }
 
-/// Where the user is in setup. Quick setup has everything preselected and
-/// advanced setup has every option. Both have a bank step, but only on a server
-/// with bank sync.
+/// A screen of quick or advanced setup.
+/// The bank screens only show when the server has bank sync.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Stage {
     Start,
@@ -97,8 +96,7 @@ impl Stage {
         matches!(self, Stage::Bank | Stage::AdvancedBank)
     }
 
-    /// The path this stage is part of: its name and its stages in order,
-    /// leaving out the bank step when `with_bank` is false.
+    /// The name and stages of this stage's path, without the bank step unless `with_bank`.
     fn path(self, with_bank: bool) -> (&'static str, Vec<(Stage, &'static str)>) {
         let (name, stages) = match self {
             Stage::Start | Stage::Bank => ("Quick setup", QUICK_STAGES),
@@ -158,11 +156,11 @@ struct Wizard {
     /// Keys of the selected [`STARTER_ACCOUNTS`].
     selected: Signal<BTreeSet<&'static str>>,
     use_codes: Signal<bool>,
-    /// The plan as chosen; see [`Wizard::bank_plan`] for the one in effect.
+    /// The plan the user picked. `bank_plan` gives the one in effect.
     chosen_bank_plan: Signal<BankPlan>,
     bank_name: Signal<String>,
     bank_currency: Signal<String>,
-    /// Name of the asset account the first bank account is linked to; empty for none.
+    /// Asset account to link the first bank account to, or empty for none.
     bank_link: Signal<String>,
     error: Signal<Option<String>>,
     result: Signal<Option<SetupResult>>,
@@ -240,8 +238,8 @@ impl Wizard {
         self.context.read().bank_sync_providers.first().cloned()
     }
 
-    /// Asset accounts the first bank account can be linked to: the ones the user
-    /// already has plus the ones about to be created.
+    /// Asset accounts the first bank account can be linked to.
+    /// Includes both existing accounts and those about to be created.
     fn linkable_accounts(&self) -> Vec<String> {
         let mut names: Vec<String> = self
             .context
@@ -306,9 +304,8 @@ impl Wizard {
     }
 }
 
-/// Flags the action row while it is pinned to the bottom of the window with
-/// more of the page underneath, so that it can say so. The row is styled to
-/// sit one pixel past the edge while pinned, which is what this looks for.
+/// Marks the action row while it is pinned over more content, so it can show a hint.
+/// The row sits one pixel past the window edge while pinned, which is what this detects.
 const PINNED_JS: &str = r#"
 (() => {
     const actions = document.querySelector(".setup-actions");
@@ -322,7 +319,7 @@ const PINNED_JS: &str = r#"
 })();
 "#;
 
-/// The optional setup shown to new users, and again from Settings.
+/// Optional setup for new users, also linked from the empty dashboard and accounts pages.
 #[component]
 pub fn Setup() -> Element {
     let context_future = use_server_future(get_setup_context)?;
@@ -363,8 +360,7 @@ fn SetupWizard(context: SetupContext) -> Element {
         .find(|account| account.key == "checking")
         .map(|account| account.name.to_string())
         .unwrap_or_default();
-    // New users are offered bank sync up front where the server has it; anyone
-    // running setup again decides for themselves.
+    // Preselect connecting a bank only for new users on a server with bank sync.
     let default_bank_plan = if first_run && !context.bank_sync_providers.is_empty() {
         BankPlan::Connect
     } else {
@@ -431,8 +427,8 @@ fn SetupWizard(context: SetupContext) -> Element {
         let stage = (wizard.stage)();
         wizard.error.set(None);
 
-        // A hand-tracked bank account is filled in on the bank screen, so that is
-        // where an incomplete one gets fixed.
+        // An incomplete manual bank account gets fixed on the bank screen,
+        // so Review sends the user back there.
         if stage.is_bank() || stage == Stage::Review {
             if let Some(message) = wizard.validate() {
                 if stage == Stage::Review {
@@ -650,18 +646,15 @@ fn LedgerGroup(
     }
 }
 
-/// The accounts setup will create, laid out like a page of a ledger: where
-/// money sits on one side, the categories it moves through on the other, each
-/// account's code beside its name. Accounts that a change of selection adds
-/// while the sheet is on screen are briefly highlighted.
+/// The accounts setup will create, laid out like a ledger page.
+/// Accounts added while it is on screen are briefly highlighted.
 #[component]
 fn LedgerSheet() -> Element {
     let wizard = use_context::<Wizard>();
     let new_accounts = wizard.new_accounts();
     let count = new_accounts.len();
 
-    // What the sheet showed last time it rendered; nothing counts as added the
-    // first time.
+    // Keys shown on the last render. Nothing counts as added on the first one.
     let shown = use_hook(|| Rc::new(RefCell::new(None::<BTreeSet<&'static str>>)));
     let keys: BTreeSet<&'static str> = new_accounts.iter().map(|account| account.key).collect();
     let added: Vec<&'static str> = match shown.replace(Some(keys.clone())) {
@@ -802,7 +795,7 @@ fn SetupSummary() -> Element {
     }
 }
 
-/// Quick setup, first screen: a starting set of accounts, shown as it is chosen.
+/// The first screen of quick setup, where the user picks a starting set of accounts.
 #[component]
 fn StageStart(first_run: bool) -> Element {
     let mut wizard = use_context::<Wizard>();
@@ -859,8 +852,8 @@ fn StageStart(first_run: bool) -> Element {
     }
 }
 
-/// The bank screen of both quick and advanced setup. Advanced setup also lets
-/// the user pick which ledger account a hand-tracked bank account is linked to.
+/// The bank screen of quick and advanced setup.
+/// Advanced setup also lets the user pick the ledger account a manual bank account links to.
 #[component]
 fn StageBank(show_link: bool) -> Element {
     rsx! {
@@ -877,9 +870,8 @@ fn StageBank(show_link: bool) -> Element {
     }
 }
 
-/// The choice of what to do about the user's bank, on the bank screen of both
-/// quick and advanced setup. Only shown when this server has bank sync. `show_link` lets the user pick which ledger
-/// account a hand-tracked bank account is linked to; otherwise the default is used.
+/// The bank options, shown only when this server has bank sync.
+/// `show_link` lets the user pick the ledger account a manual bank account links to.
 #[component]
 fn BankPlanFields(show_link: bool) -> Element {
     let mut wizard = use_context::<Wizard>();

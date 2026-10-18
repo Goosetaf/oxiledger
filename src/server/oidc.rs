@@ -378,9 +378,8 @@ pub async fn handle_callback(
     // 5. Upsert the user row.
     //    On conflict (same provider + subject) we update the email so it stays fresh.
     //    The UNIQUE constraint on (oidc_provider, oidc_subject) set in migration 0002
-    //    ensures we never create a duplicate identity. Both timestamps default to
-    //    the same NOW() on insert and the update moves `updated_at`, so they are
-    //    equal only for a user created just now.
+    //    ensures we never create a duplicate identity.
+    //    created_at equals updated_at only when the row was just inserted.
     let (user_id, is_new): (Uuid, bool) = match sqlx::query!(
         r#"
         INSERT INTO users (username, email, oidc_provider, oidc_subject)

@@ -32,7 +32,7 @@ pub struct StarterAccountInput {
 pub struct SetupBankAccountInput {
     pub name: String,
     pub currency: String,
-    /// Name of the asset account to link it to; `None` leaves it unlinked.
+    /// Name of the asset account to link it to, or `None` for no link.
     pub linked_account_name: Option<String>,
 }
 
@@ -308,7 +308,7 @@ pub const STARTER_ACCOUNTS: &[StarterAccount] = &[
     ),
 ];
 
-/// A ready-made selection of [`STARTER_ACCOUNTS`].
+/// A preset selection of [`STARTER_ACCOUNTS`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AccountTemplate {
     pub id: &'static str,

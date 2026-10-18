@@ -54,7 +54,7 @@ enum Route {
         OidcLogin {},
         #[route("/auth/oidc/callback")]
         OidcCallback {},
-        // First-run setup wizard — full-page, checks the session itself
+        // Setup sits outside the Navbar layout and checks the session itself
         #[route("/setup")]
         Setup {},
         // Authenticated routes — wrapped in Navbar layout

@@ -14,9 +14,7 @@ fn db_error(err: sqlx::Error) -> ServerFnError {
 }
 
 /// Apply everything the setup wizard collected in a single database transaction.
-///
-/// Safe to run more than once: accounts the user already has (same name and type)
-/// are left alone, and a code that is already taken is dropped rather than failing.
+/// Existing accounts are skipped and taken codes are dropped, so it can safely run again.
 pub async fn apply_setup(
     pool: &PgPool,
     user_id: Uuid,
@@ -80,8 +78,7 @@ pub async fn apply_setup(
 
     let mut tx = pool.begin().await.map_err(db_error)?;
 
-    // Lock the user's row so that two setup requests for the same user cannot
-    // interleave and create duplicate accounts.
+    // Lock the user's row so two setup requests can't create duplicate accounts.
     sqlx::query!("SELECT id FROM users WHERE id = $1 FOR UPDATE", user_id)
         .fetch_one(&mut *tx)
         .await
