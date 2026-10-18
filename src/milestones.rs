@@ -183,9 +183,12 @@ mod tests {
     use std::collections::HashSet;
 
     fn every_milestone() -> Vec<Milestone> {
-        // Fails to compile when a variant is added, as a reminder to list it here
+        // Fails to compile when either enum gains a variant, as a reminder to add it here and to the ALL list
         match Milestone::SetupFinished {
             Milestone::SetupFinished | Milestone::SetupSkipped | Milestone::Dismissed(_) => {}
+        }
+        match Hint::GettingStarted {
+            Hint::GettingStarted => {}
         }
 
         let mut all = vec![Milestone::SetupFinished, Milestone::SetupSkipped];

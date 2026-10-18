@@ -527,7 +527,7 @@ pub fn BankConnect(source_id: Option<Uuid>, provider: Option<String>) -> Element
     let internal_accounts_resource =
         use_resource(crate::views::transactions::list_accounts_for_txn);
 
-    // Setup links here with a provider in the URL, which is then preselected.
+    // Setup and the dashboard checklist link here with a provider to preselect.
     let mut selected_method = use_signal(|| {
         if let Some(provider) = provider {
             provider

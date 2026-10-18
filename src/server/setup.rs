@@ -147,10 +147,10 @@ pub async fn apply_setup(
     let mut bank_account_existed = false;
 
     if let Some((name, currency, linked_account_name)) = bank_account {
-        // Reuse a bank account with the same name, so running setup again doesn't add another
+        // Reuse an unconnected bank account with the same name, so running setup again doesn't add another
         let existing_id = sqlx::query_scalar!(
             "SELECT id FROM bank_accounts
-             WHERE user_id = $1 AND LOWER(TRIM(name)) = LOWER($2)
+             WHERE user_id = $1 AND bank_connection_id IS NULL AND LOWER(TRIM(name)) = LOWER($2)
              ORDER BY created_at
              LIMIT 1",
             user_id,

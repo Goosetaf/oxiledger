@@ -247,9 +247,12 @@ fn GettingStarted(progress: Progress) -> Element {
         to: crate::Route::NewTransaction {},
     });
 
+    // Only for people who came through setup, so existing users aren't shown it
+    let came_through_setup =
+        progress.has(Milestone::SetupFinished) || progress.has(Milestone::SetupSkipped);
     let total = steps.len();
     let done = steps.iter().filter(|step| step.done).count();
-    if hidden() || done == total {
+    if hidden() || !came_through_setup || done == total {
         return rsx! {};
     }
 
