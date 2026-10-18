@@ -73,8 +73,8 @@ pub struct Progress {
     pub has_transactions: bool,
     /// Has a bank account kept up to date by bank sync.
     pub bank_connected: bool,
-    /// Whether this server has bank sync, so bank steps only show when they can be done.
-    pub bank_sync_available: bool,
+    /// The first bank sync provider on this server, or `None` when it has no bank sync.
+    pub bank_sync_provider: Option<String>,
 }
 
 impl Progress {
@@ -124,7 +124,9 @@ pub async fn get_progress() -> Result<Progress, ServerFnError> {
             has_accounts: row.has_accounts,
             has_transactions: row.has_transactions,
             bank_connected: row.bank_connected,
-            bank_sync_available: !crate::bank_sync::configured_provider_ids().is_empty(),
+            bank_sync_provider: crate::bank_sync::configured_provider_ids()
+                .into_iter()
+                .next(),
         });
     }
 

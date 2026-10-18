@@ -198,6 +198,8 @@ struct Step {
     title: &'static str,
     detail: &'static str,
     done: bool,
+    /// False while an earlier step has to be done first.
+    ready: bool,
     action: &'static str,
     to: crate::Route,
 }
@@ -212,29 +214,35 @@ fn GettingStarted(progress: Progress) -> Element {
         title: "Set up your accounts",
         detail: "Pick a starter set or create your own",
         done: progress.has_accounts,
+        ready: true,
         action: "Set up",
         to: crate::Route::Setup {},
     }];
-    if progress.bank_sync_available {
+    if let Some(provider) = progress.bank_sync_provider.clone() {
         steps.push(Step {
             title: "Connect your bank",
             detail: "Import transactions automatically",
             done: progress.bank_connected,
+            ready: true,
             action: "Connect",
             to: crate::Route::BankConnect {
                 source_id: None,
-                provider: None,
+                provider: Some(provider),
             },
         });
     }
     steps.push(Step {
         title: "Record your first transaction",
-        detail: if progress.bank_sync_available {
+        detail: if !progress.has_accounts {
+            "Set up your accounts first"
+        } else if progress.bank_sync_provider.is_some() {
             "Book one from your bank or enter it by hand"
         } else {
             "Enter a purchase, payment or transfer"
         },
         done: progress.has_transactions,
+        // Transactions need accounts to post to
+        ready: progress.has_accounts,
         action: "Add",
         to: crate::Route::NewTransaction {},
     });
@@ -293,7 +301,7 @@ fn GettingStarted(progress: Progress) -> Element {
                         }
                         if step.done {
                             span { class: "getting-started-done", "Done" }
-                        } else {
+                        } else if step.ready {
                             Link { class: "btn btn-primary btn-sm", to: step.to, "{step.action}" }
                         }
                     }

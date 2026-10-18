@@ -17,7 +17,7 @@ fn db_error(err: sqlx::Error) -> ServerFnError {
 }
 
 /// Apply everything the setup wizard collected in a single database transaction.
-/// Existing accounts are skipped and taken codes are dropped, so it can safely run again.
+/// Anything that already exists is skipped and taken codes are dropped, so it can safely run again.
 pub async fn apply_setup(
     pool: &PgPool,
     user_id: Uuid,
@@ -144,35 +144,56 @@ pub async fn apply_setup(
     }
 
     let mut bank_account_id = None;
+    let mut bank_account_existed = false;
 
     if let Some((name, currency, linked_account_name)) = bank_account {
-        let internal_account_id = match linked_account_name {
-            Some(linked_name) => sqlx::query_scalar!(
-                "SELECT id FROM accounts
-                 WHERE user_id = $1 AND account_type = 'Asset' AND LOWER(name) = LOWER($2)
-                 ORDER BY created_at
-                 LIMIT 1",
-                user_id,
-                linked_name
-            )
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(db_error)?,
-            None => None,
-        };
-
-        let id = sqlx::query_scalar!(
-            "INSERT INTO bank_accounts (user_id, internal_account_id, name, currency, is_manual)
-             VALUES ($1, $2, $3, $4, TRUE)
-             RETURNING id",
+        // Reuse a bank account with the same name, so running setup again doesn't add another
+        let existing_id = sqlx::query_scalar!(
+            "SELECT id FROM bank_accounts
+             WHERE user_id = $1 AND LOWER(TRIM(name)) = LOWER($2)
+             ORDER BY created_at
+             LIMIT 1",
             user_id,
-            internal_account_id,
-            name,
-            currency
+            name
         )
-        .fetch_one(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(db_error)?;
+
+        bank_account_existed = existing_id.is_some();
+        let id = match existing_id {
+            Some(id) => id,
+            None => {
+                let internal_account_id = match linked_account_name {
+                    // An exact match wins over one that only differs in case
+                    Some(linked_name) => sqlx::query_scalar!(
+                        "SELECT id FROM accounts
+                         WHERE user_id = $1 AND account_type = 'Asset' AND LOWER(name) = LOWER($2)
+                         ORDER BY name = $2 DESC, created_at
+                         LIMIT 1",
+                        user_id,
+                        linked_name
+                    )
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(db_error)?,
+                    None => None,
+                };
+
+                sqlx::query_scalar!(
+                    "INSERT INTO bank_accounts (user_id, internal_account_id, name, currency, is_manual)
+                     VALUES ($1, $2, $3, $4, TRUE)
+                     RETURNING id",
+                    user_id,
+                    internal_account_id,
+                    name,
+                    currency
+                )
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(db_error)?
+            }
+        };
 
         bank_account_id = Some(id);
     }
@@ -187,5 +208,6 @@ pub async fn apply_setup(
         created_accounts,
         skipped_accounts,
         bank_account_id,
+        bank_account_existed,
     })
 }

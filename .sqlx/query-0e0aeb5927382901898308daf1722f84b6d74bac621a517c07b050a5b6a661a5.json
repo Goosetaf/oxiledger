@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO bank_accounts (user_id, internal_account_id, name, currency, is_manual)\n             VALUES ($1, $2, $3, $4, TRUE)\n             RETURNING id",
+  "query": "INSERT INTO bank_accounts (user_id, internal_account_id, name, currency, is_manual)\n                     VALUES ($1, $2, $3, $4, TRUE)\n                     RETURNING id",
   "describe": {
     "columns": [
       {
@@ -21,5 +21,5 @@
       false
     ]
   },
-  "hash": "102eeb285853ab291bf0eb26a2679885b2afd5b43f5b5e572f56af0a2335d66c"
+  "hash": "0e0aeb5927382901898308daf1722f84b6d74bac621a517c07b050a5b6a661a5"
 }

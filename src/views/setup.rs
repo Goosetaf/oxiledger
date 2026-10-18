@@ -1155,7 +1155,9 @@ fn SetupDone() -> Element {
                 if result.skipped_accounts > 0 {
                     " {result.skipped_accounts} already existed."
                 }
-                if result.bank_account_id.is_some() {
+                if result.bank_account_existed {
+                    " Your bank account already existed."
+                } else if result.bank_account_id.is_some() {
                     " Bank account added."
                 }
             }
