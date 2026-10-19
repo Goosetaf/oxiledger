@@ -13,6 +13,7 @@ use crate::{
     views::error::LoginRedirectNotice,
 };
 use dioxus::prelude::*;
+use dioxus_free_icons::{icons::ld_icons::LdCheck, Icon};
 
 /// Returns what the wizard needs to start, or `None` when nobody is signed in.
 #[get("/api/setup/context")]
@@ -540,7 +541,7 @@ fn SetupWizard(context: SetupContext) -> Element {
                                         class: "setup-step-index",
                                         aria_hidden: "true",
                                         if index < current {
-                                            "✓"
+                                            Icon { class: "icon", icon: LdCheck }
                                         } else {
                                             "{index + 1}"
                                         }
@@ -1137,7 +1138,9 @@ fn SetupDone() -> Element {
 
     rsx! {
         div { class: "setup-intro",
-            span { class: "setup-done-mark", aria_hidden: "true", "✓" }
+            span { class: "setup-done-mark", aria_hidden: "true",
+                Icon { class: "icon", icon: LdCheck }
+            }
             h1 {
                 id: "setup-step-title",
                 class: "setup-title",

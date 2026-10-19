@@ -3,6 +3,7 @@ use crate::{
     models::transaction::AccountBalance,
 };
 use dioxus::prelude::*;
+use dioxus_free_icons::{icons::ld_icons::LdCheck, Icon};
 use rust_decimal::Decimal;
 
 #[get("/api/dashboard/balances")]
@@ -293,7 +294,7 @@ fn GettingStarted(progress: Progress) -> Element {
                             class: "getting-started-mark",
                             aria_hidden: "true",
                             if step.done {
-                                "✓"
+                                Icon { class: "icon", icon: LdCheck }
                             } else {
                                 "{index + 1}"
                             }
