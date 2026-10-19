@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use strum::VariantArray;
 
 /// Something a user has done that the rest of their data can't show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -12,7 +13,9 @@ pub enum Milestone {
 }
 
 /// A hint the user can close for good.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, VariantArray,
+)]
 pub enum Hint {
     /// The checklist on the dashboard.
     GettingStarted,
@@ -20,7 +23,7 @@ pub enum Hint {
 
 #[cfg(any(feature = "server", test))]
 impl Hint {
-    pub const ALL: &[Hint] = &[Hint::GettingStarted];
+    pub const ALL: &'static [Hint] = Self::VARIANTS;
 
     fn key(self) -> &'static str {
         match self {
@@ -183,12 +186,9 @@ mod tests {
     use std::collections::HashSet;
 
     fn every_milestone() -> Vec<Milestone> {
-        // Fails to compile when either enum gains a variant, as a reminder to add it here and to the ALL list
+        // Fails to compile when Milestone gains a variant, as a reminder to add it here
         match Milestone::SetupFinished {
             Milestone::SetupFinished | Milestone::SetupSkipped | Milestone::Dismissed(_) => {}
-        }
-        match Hint::GettingStarted {
-            Hint::GettingStarted => {}
         }
 
         let mut all = vec![Milestone::SetupFinished, Milestone::SetupSkipped];
@@ -205,6 +205,21 @@ mod tests {
             assert!(key.len() <= 100, "{key} is too long for the schema");
             assert_eq!(Milestone::from_key(&key), Some(milestone));
             assert!(keys.insert(key), "{milestone:?} shares a key");
+        }
+    }
+
+    #[test]
+    fn stored_keys_never_change() {
+        // Saved milestones hold these keys, so add new ones and never rename one
+        for (milestone, key) in [
+            (Milestone::SetupFinished, "setup_finished"),
+            (Milestone::SetupSkipped, "setup_skipped"),
+            (
+                Milestone::Dismissed(Hint::GettingStarted),
+                "dismissed:getting_started",
+            ),
+        ] {
+            assert_eq!(milestone.key(), key);
         }
     }
 
