@@ -1166,7 +1166,7 @@ fn SetupDone() -> Element {
             }
         }
 
-        div { class: "setup-actions",
+        div { class: "setup-actions setup-done-actions",
             if let Some(bank_account_id) = result.bank_account_id {
                 if sync_provider.is_some() {
                     Link {
