@@ -33,39 +33,35 @@ Bank sync imports transactions and balances from users' banks through Enable Ban
 
 Register an application in the [Enable Banking](https://enablebanking.com) control panel and add `<BASE_URL>/bank-sync/callback` as a redirect URL.
 
-| Variable                          | Description                                                                                                           | Default   |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- | --------- |
-| `ENABLE_BANKING_APP_ID`           | The application's ID.                                                                                                 | _null_    |
-| `ENABLE_BANKING_PRIVATE_KEY_PATH` | Path to the application's private key in PEM format. In Docker, mount the file and use its path inside the container. | _null_    |
-| `ENABLE_BANKING_ENVIRONMENT`      | `SANDBOX` or `PRODUCTION`. Currently has no effect.                                                                   | `SANDBOX` |
+| Variable                          | Description                                                       | Default   |
+| --------------------------------- | ----------------------------------------------------------------- | --------- |
+| `ENABLE_BANKING_APP_ID`           | The application's ID.                                             | _null_    |
+| `ENABLE_BANKING_PRIVATE_KEY_PATH` | Path to the application's private key in PEM format.              | _null_    |
+| `ENABLE_BANKING_ENVIRONMENT`      | `SANDBOX` or `PRODUCTION`. Use `PRODUCTION` for real deployments. | `SANDBOX` |
 
 #### GoCardless
 
 Uses a secret ID and key from [GoCardless Bank Account Data](https://developer.gocardless.com/bank-account-data).
 
-| Variable                 | Description                                         | Default   |
-| ------------------------ | --------------------------------------------------- | --------- |
-| `GOCARDLESS_SECRET_ID`   | The secret ID.                                      | _null_    |
-| `GOCARDLESS_SECRET_KEY`  | The secret key.                                     | _null_    |
-| `GOCARDLESS_ENVIRONMENT` | `SANDBOX` or `PRODUCTION`. Currently has no effect. | `SANDBOX` |
+| Variable                 | Description                                                       | Default   |
+| ------------------------ | ----------------------------------------------------------------- | --------- |
+| `GOCARDLESS_SECRET_ID`   | The secret ID.                                                    | _null_    |
+| `GOCARDLESS_SECRET_KEY`  | The secret key.                                                   | _null_    |
+| `GOCARDLESS_ENVIRONMENT` | `SANDBOX` or `PRODUCTION`. Use `PRODUCTION` for real deployments. | `SANDBOX` |
 
 #### Automatic sync
 
-| Variable                | Description                                                                                 | Default       |
-| ----------------------- | ------------------------------------------------------------------------------------------- | ------------- |
-| `BANK_SYNC_MODE`        | When connected accounts refresh on their own. `off`, `lazy` or `background`.                | `off`         |
-| `BANK_SYNC_TTL_SECONDS` | How many seconds an account's data may age before it is refreshed. A positive whole number. | _null_        |
-| `BANK_SYNC_SCHEDULE`    | Cron schedule for `background` mode, in UTC. Five fields, or six with seconds first.        | `0 0 * * * *` |
-
-With `lazy`, an account is refreshed when its detail page is opened and its data is older than `BANK_SYNC_TTL_SECONDS`. Lazy mode never refreshes without a TTL. With `background`, accounts are refreshed on `BANK_SYNC_SCHEDULE`, every hour by default. Only accounts older than the TTL are refreshed, or every account if no TTL is set. The Sync button on an account works in any mode.
-
-If you set the schedule in a `.env` file, put it in quotes, like `BANK_SYNC_SCHEDULE="0 6 * * *"`. Otherwise that line and every line after it are skipped.
+| Variable                | Description                                                                                                                               | Default       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `BANK_SYNC_MODE`        | How connected accounts refresh. `off` (only with the Sync button), `lazy` (when an account is opened) or `background` (on a schedule).    | `off`         |
+| `BANK_SYNC_TTL_SECONDS` | How many seconds an account's data may age before it is refreshed. Required for `lazy`. Without it, `background` refreshes every account. | _null_        |
+| `BANK_SYNC_SCHEDULE`    | Cron schedule for `background` mode, in UTC.                                                                                              | `0 0 * * * *` |
 
 # Development
 
 To get started, install Rust, dioxus-cli, and sqlx-cli. If you use Nix, the flake provides them.
 
-`docker compose up -d` starts a PostgreSQL database that matches the `DATABASE_URL` in `.env.example`.
+To start a development database, you can run `docker compose up -d`, which matches the prefilled `.env.example`.
 
 ## Serving
 
