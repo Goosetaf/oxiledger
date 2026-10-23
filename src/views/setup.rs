@@ -13,7 +13,10 @@ use crate::{
     views::error::LoginRedirectNotice,
 };
 use dioxus::prelude::*;
-use dioxus_free_icons::{icons::ld_icons::LdCheck, Icon};
+use dioxus_free_icons::{
+    icons::ld_icons::{LdCheck, LdChevronDown},
+    Icon,
+};
 
 /// Returns what the wizard needs to start, or `None` when nobody is signed in.
 #[get("/api/setup/context")]
@@ -310,7 +313,7 @@ impl Wizard {
 /// The row sits one pixel past the window edge while pinned, which is what this detects.
 const PINNED_JS: &str = r#"
 (() => {
-    const actions = document.querySelector(".setup-actions");
+    const actions = document.getElementById("setup-actions");
     if (!actions || !("IntersectionObserver" in window)) return;
     new IntersectionObserver(
         ([entry]) => {
@@ -320,6 +323,25 @@ const PINNED_JS: &str = r#"
     ).observe(actions);
 })();
 "#;
+
+/// Setup sits outside the app shell, so it brings its own phone gutters.
+const SHELL: &str = "mx-auto flex min-h-screen w-[min(calc(100%-32px),860px)] flex-col gap-6 pt-8 pb-16 phone:mr-(--gutter-right) phone:ml-(--gutter-left) phone:w-auto phone:pt-5";
+
+/// Unclipped, so the action row can stick to the bottom of the window.
+const CARD: &str = "glass-card overflow-visible! flex flex-col gap-6 p-(--setup-pad) [--setup-pad:32px] max-sm:pt-5 max-sm:[--setup-pad:16px]";
+
+/// Sticks to the bottom of the window, out to the card's edges and in its colour made solid.
+/// While pinned it sits a pixel past the edge, which is how [`PINNED_JS`] tells, and fades the content above.
+const ACTION_ROW: &str = "group sticky -bottom-px z-1 -mx-[calc(var(--setup-pad)-1px)] -mb-[calc(var(--setup-pad)-1px)] flex flex-wrap items-center justify-end gap-3 rounded-b-(--radius-card) border-t border-line-soft bg-page bg-[linear-gradient(var(--glass-bg),var(--glass-bg))] px-[calc(var(--setup-pad)-1px)] pt-4 pb-[17px] phone:pb-[calc(17px+var(--safe-bottom))] before:pointer-events-none before:absolute before:inset-x-0 before:bottom-[calc(100%+1px)] before:h-14 before:[background:inherit] before:opacity-0 before:[mask-image:linear-gradient(to_bottom,transparent,#000)] before:transition-opacity before:duration-160 data-[pinned=true]:before:opacity-100 motion-reduce:before:transition-none";
+
+const FIELDSET: &str = "m-0 flex min-w-0 flex-col gap-2.5 border-0 p-0";
+
+/// A pill with a checkbox or radio, for picking accounts and templates.
+const OPTION: &str = "inline-flex items-center gap-2 rounded-full border border-line-soft px-3 py-1.75 text-[0.88rem] transition-colors duration-160 motion-reduce:transition-none";
+const OPTION_ENABLED: &str =
+    "cursor-pointer bg-white/2 has-checked:border-brand/55 has-checked:bg-brand/8";
+
+const CHECKBOX: &str = "size-4 shrink-0 accent-primary-container focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 
 /// Optional setup for new users, also linked from the empty dashboard and accounts pages.
 #[component]
@@ -339,7 +361,7 @@ pub fn Setup() -> Element {
         Some(Err(err)) => return Err(err.into()),
         None => {
             return rsx! {
-                div { class: "setup-shell",
+                div { class: SHELL,
                     div { class: "message message-info", "Loading setup..." }
                 }
             };
@@ -501,8 +523,8 @@ fn SetupWizard(context: SetupContext) -> Element {
     };
 
     rsx! {
-        div { class: "setup-shell",
-            header { class: "setup-header",
+        div { class: SHELL,
+            header { class: "flex items-center justify-between gap-4",
                 div { class: "auth-brand",
                     div { class: "auth-brand-mark",
                         img { src: asset!("/assets/header.svg"), alt: "" }
@@ -528,32 +550,37 @@ fn SetupWizard(context: SetupContext) -> Element {
             }
 
             if finished {
-                main { class: "setup-card", SetupDone {} }
+                main { class: CARD, SetupDone {} }
             } else {
                 if path_stages.len() > 1 {
                     nav { aria_label: "Setup progress",
-                        ol { class: "setup-steps",
+                        ol { class: "m-0 flex list-none gap-2 p-0",
                             for (index , (_ , label)) in path_stages.iter().enumerate() {
                                 li {
-                                    class: if index == current { "setup-step is-current" } else if index < current { "setup-step is-done" } else { "setup-step" },
+                                    class: "flex flex-1 items-center gap-2.5 border-t-2 pt-3 text-[0.82rem] font-semibold max-sm:justify-center",
+                                    class: if index == current { "border-brand text-ink" } else if index < current { "border-primary-container/60 text-muted" } else { "border-line-soft text-muted" },
                                     aria_current: if index == current { "step" },
                                     span {
-                                        class: "setup-step-index",
+                                        class: "grid size-6 shrink-0 place-items-center rounded-full text-[0.75rem]",
+                                        class: if index <= current { "bg-primary-container text-on-primary-container" } else { "bg-white/5" },
                                         aria_hidden: "true",
                                         if index < current {
-                                            Icon { class: "icon", icon: LdCheck }
+                                            Icon {
+                                                class: "size-3.5",
+                                                icon: LdCheck,
+                                            }
                                         } else {
                                             "{index + 1}"
                                         }
                                     }
-                                    span { class: "setup-step-label", "{label}" }
+                                    span { class: "max-sm:hidden", "{label}" }
                                 }
                             }
                         }
                     }
                 }
 
-                main { class: "setup-card",
+                main { class: CARD,
                     {
                         match stage {
                             Stage::Start => rsx! {
@@ -578,8 +605,17 @@ fn SetupWizard(context: SetupContext) -> Element {
                         div { class: "message message-error", role: "alert", "{err}" }
                     }
 
-                    div { class: "setup-actions",
-                        span { class: "setup-more", aria_hidden: "true", "More below" }
+                    div { id: "setup-actions", class: ACTION_ROW,
+                        span {
+                            class: "mr-auto hidden items-center gap-2.5 text-[0.82rem] text-soft group-data-[pinned=true]:inline-flex",
+                            aria_hidden: "true",
+                            Icon {
+                                class: "size-5 animate-nudge motion-reduce:animate-none",
+                                icon: LdChevronDown,
+                            }
+                            // Only the chevron on narrow phones, to leave room for the buttons
+                            span { class: "max-sm:hidden", "More below" }
+                        }
                         if stage == Stage::Start {
                             button {
                                 class: "btn btn-secondary",
@@ -619,7 +655,7 @@ fn CreationSummary() -> Element {
     let all_exist = count == 0 && !wizard.selected.read().is_empty();
 
     rsx! {
-        p { class: "setup-summary", role: "status",
+        p { class: "m-0 text-[0.9rem] text-soft", role: "status",
             if all_exist {
                 "You already have all of these."
             } else if count == 0 {
@@ -634,24 +670,34 @@ fn CreationSummary() -> Element {
 }
 
 /// One type of account on the ledger sheet, such as "Assets".
-/// Accounts whose keys are in `added` are briefly highlighted.
+/// Accounts whose keys are in `added` are briefly highlighted, and `wide` groups list them in two columns.
 #[component]
 fn LedgerGroup(
     heading: String,
     accounts: Vec<StarterAccount>,
     added: Vec<&'static str>,
     show_codes: bool,
+    wide: bool,
 ) -> Element {
     rsx! {
-        div { class: "ledger-group",
-            h3 { class: "ledger-group-title", "{heading}" }
-            ul { class: "ledger-rows",
+        div {
+            h3 { class: "m-0 pt-3 pb-1.5 text-[0.625rem] font-bold tracking-[0.14em] text-muted uppercase",
+                "{heading}"
+            }
+            ul {
+                class: "m-0 list-none p-0",
+                class: if wide { "columns-2 gap-x-6 max-sm:columns-1" },
                 for account in accounts {
+                    // Too narrow for columns of codes on phones, so each group becomes a line of names
                     li {
                         key: "{account.key}",
-                        class: if added.contains(&account.key) { "ledger-row is-added" } else { "ledger-row" },
+                        class: "-mx-1.5 grid break-inside-avoid items-baseline gap-x-3 rounded-sm px-1.5 py-0.75 text-[0.86rem] leading-[1.4] max-sm:mx-0 max-sm:inline max-sm:p-0 max-sm:not-last:after:content-[',_']",
+                        class: if show_codes { "grid-cols-[4ch_minmax(0,1fr)]" } else { "grid-cols-1" },
+                        class: if added.contains(&account.key) { "animate-ledger-row-in motion-reduce:animate-none max-sm:animate-none" },
                         if show_codes {
-                            span { class: "mono", "{account.code}" }
+                            span { class: "mono text-[0.76rem] text-muted max-sm:hidden",
+                                "{account.code}"
+                            }
                         }
                         span { "{account.name}" }
                     }
@@ -715,14 +761,27 @@ fn LedgerSheet() -> Element {
         (count, true) => format!("{count} new accounts"),
     };
 
+    // Where money sits on the left, the categories it moves through on the right
+    let side = "min-w-0 flex-1 px-4 pt-1 pb-3.5 not-first:border-l not-first:border-line max-sm:not-first:border-l-0 max-sm:not-first:pt-0 max-sm:not-last:pb-0";
+
     rsx! {
-        section { class: "ledger-sheet", aria_labelledby: "ledger-sheet-title",
-            header { class: "ledger-sheet-head",
-                h2 { id: "ledger-sheet-title", class: "ledger-sheet-title", "Your ledger" }
-                p { class: "ledger-sheet-count", role: "status", "{count_label}" }
+        section {
+            class: "rounded-md border border-line-soft bg-[rgba(30,33,39,0.11)]",
+            aria_labelledby: "ledger-sheet-title",
+            header { class: "flex items-baseline justify-between gap-4 rounded-t-md border-b border-line-soft bg-white/2 px-4 py-3",
+                h2 {
+                    id: "ledger-sheet-title",
+                    class: "m-0 text-[0.9rem] font-semibold",
+                    "Your ledger"
+                }
+                p {
+                    class: "m-0 text-[0.82rem] whitespace-nowrap text-soft",
+                    role: "status",
+                    "{count_label}"
+                }
             }
             if count == 0 {
-                p { class: "ledger-sheet-note",
+                p { class: "m-0 px-4 py-3 text-[0.82rem] text-muted",
                     if all_exist {
                         "You already have all of these."
                     } else {
@@ -730,9 +789,9 @@ fn LedgerSheet() -> Element {
                     }
                 }
             } else {
-                div { class: "ledger-sides",
+                div { class: "flex max-sm:flex-col",
                     if !holdings.is_empty() {
-                        div { class: "ledger-side",
+                        div { class: side,
                             for (heading , accounts) in holdings {
                                 LedgerGroup {
                                     key: "{heading}",
@@ -740,12 +799,13 @@ fn LedgerSheet() -> Element {
                                     accounts,
                                     added: added.clone(),
                                     show_codes,
+                                    wide: false,
                                 }
                             }
                         }
                     }
                     if !categories.is_empty() {
-                        div { class: "ledger-side is-wide",
+                        div { class: "{side} grow-2",
                             for (heading , accounts) in categories {
                                 LedgerGroup {
                                     key: "{heading}",
@@ -753,6 +813,7 @@ fn LedgerSheet() -> Element {
                                     accounts,
                                     added: added.clone(),
                                     show_codes,
+                                    wide: true,
                                 }
                             }
                         }
@@ -776,36 +837,88 @@ fn SetupSummary() -> Element {
     }
 
     rsx! {
-        dl { class: "review-list",
+        dl { class: "m-0 flex flex-col rounded-md border border-line-soft",
             if has_new_accounts {
-                div { class: "review-row",
-                    dt { "Account codes" }
-                    dd {
-                        if (wizard.use_codes)() {
-                            "Numbered"
-                        } else {
-                            "None"
-                        }
+                ReviewRow { term: "Account codes",
+                    if (wizard.use_codes)() {
+                        "Numbered"
+                    } else {
+                        "None"
                     }
                 }
             }
             if bank_plan == BankPlan::Connect {
-                div { class: "review-row",
-                    dt { "Bank sync" }
-                    dd { "Connect after setup" }
-                }
+                ReviewRow { term: "Bank sync", "Connect after setup" }
             }
             if let Some(bank_account) = bank_account {
-                div { class: "review-row",
-                    dt { "First bank account" }
-                    dd {
-                        "{bank_account.name.trim()} ({bank_account.currency.trim().to_uppercase()})"
-                        if let Some(linked) = bank_account.linked_account_name {
-                            ", linked to {linked}"
-                        }
+                ReviewRow { term: "First bank account",
+                    "{bank_account.name.trim()} ({bank_account.currency.trim().to_uppercase()})"
+                    if let Some(linked) = bank_account.linked_account_name {
+                        ", linked to {linked}"
                     }
                 }
             }
+        }
+    }
+}
+
+#[component]
+fn ReviewRow(term: &'static str, children: Element) -> Element {
+    rsx! {
+        div { class: "grid grid-cols-[180px_minmax(0,1fr)] gap-4 px-4 py-3.5 not-first:border-t not-first:border-line max-sm:grid-cols-1 max-sm:gap-1",
+            dt { class: "text-[0.75rem] font-bold tracking-[0.04em] text-muted uppercase",
+                "{term}"
+            }
+            dd { class: "m-0", {children} }
+        }
+    }
+}
+
+/// The heading of each setup screen, which takes focus when the screen changes.
+#[component]
+fn StageTitle(children: Element) -> Element {
+    rsx! {
+        h1 {
+            id: "setup-step-title",
+            class: "m-0 text-[1.6rem] leading-[1.15] font-bold tracking-[-0.02em] outline-none",
+            tabindex: "-1",
+            {children}
+        }
+    }
+}
+
+/// A radio option with a title and description, which can hold extra fields of its own.
+#[component]
+fn Choice(
+    name: &'static str,
+    value: &'static str,
+    checked: bool,
+    #[props(into)] title: String,
+    #[props(into)] detail: String,
+    #[props(default)] recommended: bool,
+    onselect: EventHandler,
+    children: Element,
+) -> Element {
+    rsx! {
+        div { class: "rounded-md border border-line-soft bg-white/2 transition-colors duration-160 hover:border-white/16 has-checked:border-brand has-checked:bg-brand/7 has-[>label>input:focus-visible]:outline-2 has-[>label>input:focus-visible]:outline-offset-2 has-[>label>input:focus-visible]:outline-primary motion-reduce:transition-none",
+            label { class: "grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 px-4 py-3.5",
+                input {
+                    class: "m-0 mt-0.5 grid size-4.5 cursor-pointer appearance-none place-content-center rounded-full border-[1.5px] border-muted bg-transparent outline-none transition-colors duration-120 before:size-2 before:scale-0 before:rounded-full before:bg-brand before:transition-transform before:duration-120 checked:border-brand checked:before:scale-100 motion-reduce:transition-none motion-reduce:before:transition-none",
+                    r#type: "radio",
+                    name,
+                    value,
+                    checked,
+                    onchange: move |_| onselect.call(()),
+                }
+                span { class: "flex min-w-0 flex-col gap-1",
+                    span { class: "leading-[1.35] font-semibold", "{title}" }
+                    span { class: "tiny-text mt-0!", "{detail}" }
+                }
+                if recommended {
+                    span { class: "chip chip-positive", "Recommended" }
+                }
+            }
+            {children}
         }
     }
 }
@@ -817,18 +930,15 @@ fn StageStart(first_run: bool) -> Element {
     let current = wizard.template().map(|template| template.id);
 
     rsx! {
-        div { class: "setup-intro",
-            h1 {
-                id: "setup-step-title",
-                class: "setup-title",
-                tabindex: "-1",
+        div { class: "flex flex-col gap-2.5",
+            StageTitle {
                 if first_run {
                     "Set up your ledger"
                 } else {
                     "Add accounts"
                 }
             }
-            p { class: "supporting-text",
+            p { class: "supporting-text max-w-[76ch] leading-[1.55]",
                 if first_run {
                     "Pick a starting point. You can change everything later."
                 } else {
@@ -837,27 +947,18 @@ fn StageStart(first_run: bool) -> Element {
             }
         }
 
-        fieldset { class: "setup-fieldset",
-            legend { class: "visually-hidden", "Starting point" }
-            div { class: "choice-grid",
+        fieldset { class: FIELDSET,
+            legend { class: "sr-only", "Starting point" }
+            div { class: "grid grid-cols-2 gap-2.5 max-sm:grid-cols-1",
                 for template in ACCOUNT_TEMPLATES {
-                    div { class: "choice",
-                        label { class: "choice-head",
-                            input {
-                                r#type: "radio",
-                                name: "setup-template",
-                                value: template.id,
-                                checked: current == Some(template.id),
-                                onchange: move |_| wizard.choose_template(template),
-                            }
-                            span { class: "choice-copy",
-                                span { class: "choice-title", "{template.name}" }
-                                span { class: "tiny-text", "{template.description}" }
-                            }
-                            if template.recommended {
-                                span { class: "chip chip-positive", "Recommended" }
-                            }
-                        }
+                    Choice {
+                        name: "setup-template",
+                        value: template.id,
+                        checked: current == Some(template.id),
+                        title: template.name,
+                        detail: template.description,
+                        recommended: template.recommended,
+                        onselect: move |_| wizard.choose_template(template),
                     }
                 }
             }
@@ -872,14 +973,7 @@ fn StageStart(first_run: bool) -> Element {
 #[component]
 fn StageBank(show_link: bool) -> Element {
     rsx! {
-        div { class: "setup-intro",
-            h1 {
-                id: "setup-step-title",
-                class: "setup-title",
-                tabindex: "-1",
-                "Add your bank"
-            }
-        }
+        StageTitle { "Add your bank" }
 
         BankPlanFields { show_link }
     }
@@ -896,41 +990,28 @@ fn BankPlanFields(show_link: bool) -> Element {
     let linked = wizard.linked_account().unwrap_or_default();
 
     rsx! {
-        fieldset { class: "setup-fieldset",
-            legend { class: "visually-hidden", "Your bank" }
-            div { class: "choice-grid is-stacked",
-                div { class: "choice",
-                    label { class: "choice-head",
-                        input {
-                            r#type: "radio",
-                            name: "setup-bank-plan",
-                            value: "connect",
-                            checked: plan == BankPlan::Connect,
-                            onchange: move |_| wizard.chosen_bank_plan.set(BankPlan::Connect),
-                        }
-                        span { class: "choice-copy",
-                            span { class: "choice-title", "Connect my bank" }
-                            span { class: "tiny-text", "Import transactions through {provider_list}" }
-                        }
-                        span { class: "chip chip-positive", "Recommended" }
-                    }
+        fieldset { class: FIELDSET,
+            legend { class: "sr-only", "Your bank" }
+            div { class: "grid grid-cols-1 gap-2.5",
+                Choice {
+                    name: "setup-bank-plan",
+                    value: "connect",
+                    checked: plan == BankPlan::Connect,
+                    title: "Connect my bank",
+                    detail: "Import transactions through {provider_list}",
+                    recommended: true,
+                    onselect: move |_| wizard.chosen_bank_plan.set(BankPlan::Connect),
                 }
-                div { class: "choice",
-                    label { class: "choice-head",
-                        input {
-                            r#type: "radio",
-                            name: "setup-bank-plan",
-                            value: "manual",
-                            checked: plan == BankPlan::Manual,
-                            onchange: move |_| wizard.chosen_bank_plan.set(BankPlan::Manual),
-                        }
-                        span { class: "choice-copy",
-                            span { class: "choice-title", "Add an account by hand" }
-                            span { class: "tiny-text", "Track it yourself" }
-                        }
-                    }
+                Choice {
+                    name: "setup-bank-plan",
+                    value: "manual",
+                    checked: plan == BankPlan::Manual,
+                    title: "Add an account by hand",
+                    detail: "Track it yourself",
+                    onselect: move |_| wizard.chosen_bank_plan.set(BankPlan::Manual),
                     if plan == BankPlan::Manual {
-                        div { class: "choice-extra",
+                        // Lines up with the option's text, past the radio
+                        div { class: "flex flex-col gap-3 pt-0.5 pr-4 pb-4 pl-11.5 max-sm:pl-4",
                             div { class: if show_link { "form-grid three-up" } else { "form-grid two-up" },
                                 div { class: "field-block",
                                     label {
@@ -992,25 +1073,18 @@ fn BankPlanFields(show_link: bool) -> Element {
                                 }
                             }
                             if !show_link && !linked.is_empty() {
-                                p { class: "tiny-text", "Linked to {linked}" }
+                                p { class: "tiny-text mt-0!", "Linked to {linked}" }
                             }
                         }
                     }
                 }
-                div { class: "choice",
-                    label { class: "choice-head",
-                        input {
-                            r#type: "radio",
-                            name: "setup-bank-plan",
-                            value: "later",
-                            checked: plan == BankPlan::Later,
-                            onchange: move |_| wizard.chosen_bank_plan.set(BankPlan::Later),
-                        }
-                        span { class: "choice-copy",
-                            span { class: "choice-title", "Not now" }
-                            span { class: "tiny-text", "Add one later from Bank Accounts" }
-                        }
-                    }
+                Choice {
+                    name: "setup-bank-plan",
+                    value: "later",
+                    checked: plan == BankPlan::Later,
+                    title: "Not now",
+                    detail: "Add one later from Bank Accounts",
+                    onselect: move |_| wizard.chosen_bank_plan.set(BankPlan::Later),
                 }
             }
         }
@@ -1023,21 +1097,15 @@ fn StageAccounts() -> Element {
     let current = wizard.template().map(|template| template.id);
 
     rsx! {
-        div { class: "setup-intro",
-            h1 {
-                id: "setup-step-title",
-                class: "setup-title",
-                tabindex: "-1",
-                "Choose accounts"
-            }
-        }
+        StageTitle { "Choose accounts" }
 
-        fieldset { class: "setup-fieldset",
-            legend { class: "field-label", "Start from" }
-            div { class: "account-options",
+        fieldset { class: FIELDSET,
+            legend { class: "field-label mb-2.5 p-0", "Start from" }
+            div { class: "flex flex-wrap gap-2",
                 for template in ACCOUNT_TEMPLATES {
-                    label { class: "account-option",
+                    label { class: "{OPTION} {OPTION_ENABLED}",
                         input {
+                            class: "{CHECKBOX} m-0",
                             r#type: "radio",
                             name: "setup-preset",
                             value: template.id,
@@ -1051,9 +1119,9 @@ fn StageAccounts() -> Element {
         }
 
         for (account_type , heading) in ACCOUNT_GROUPS.iter().copied() {
-            fieldset { class: "setup-fieldset",
-                legend { class: "label-strong", "{heading}" }
-                div { class: "account-options",
+            fieldset { class: FIELDSET,
+                legend { class: "label-strong mb-2.5 p-0", "{heading}" }
+                div { class: "flex flex-wrap gap-2",
                     for account in STARTER_ACCOUNTS.iter().filter(move |account| account.account_type == account_type) {
                         AccountOption { account: *account }
                     }
@@ -1061,15 +1129,16 @@ fn StageAccounts() -> Element {
             }
         }
 
-        label { class: "check-row",
+        label { class: "flex cursor-pointer items-start gap-3",
             input {
+                class: "{CHECKBOX} mx-0 mt-0.5 mb-0",
                 r#type: "checkbox",
                 checked: (wizard.use_codes)(),
                 onchange: move |event| wizard.use_codes.set(event.checked()),
             }
-            span { class: "check-row-copy",
+            span { class: "flex min-w-0 flex-col gap-1",
                 span { class: "label-strong", "Number the accounts" }
-                span { class: "tiny-text", "Adds codes like 1000 and 5020" }
+                span { class: "tiny-text mt-0!", "Adds codes like 1000 and 5020" }
             }
         }
 
@@ -1085,9 +1154,11 @@ fn AccountOption(account: StarterAccount) -> Element {
 
     rsx! {
         label {
-            class: if exists { "account-option is-disabled" } else { "account-option" },
+            class: "{OPTION}",
+            class: if exists { "cursor-default border-dashed bg-transparent text-muted" } else { "{OPTION_ENABLED}" },
             title: account.description,
             input {
+                class: "{CHECKBOX} m-0",
                 r#type: "checkbox",
                 checked,
                 disabled: exists,
@@ -1101,7 +1172,7 @@ fn AccountOption(account: StarterAccount) -> Element {
             }
             span { "{account.name}" }
             if exists {
-                span { class: "tiny-text", "Already added" }
+                span { class: "text-[0.72rem] text-muted", "Already added" }
             }
         }
     }
@@ -1110,14 +1181,11 @@ fn AccountOption(account: StarterAccount) -> Element {
 #[component]
 fn StageReview() -> Element {
     rsx! {
-        div { class: "setup-intro",
-            h1 {
-                id: "setup-step-title",
-                class: "setup-title",
-                tabindex: "-1",
-                "Review"
+        div { class: "flex flex-col gap-2.5",
+            StageTitle { "Review" }
+            p { class: "supporting-text max-w-[76ch] leading-[1.55]",
+                "Nothing is saved until you finish."
             }
-            p { class: "supporting-text", "Nothing is saved until you finish." }
         }
 
         LedgerSheet {}
@@ -1137,17 +1205,16 @@ fn SetupDone() -> Element {
     let created = result.created_accounts;
 
     rsx! {
-        div { class: "setup-intro",
-            span { class: "setup-done-mark", aria_hidden: "true",
-                Icon { class: "icon", icon: LdCheck }
+        div { class: "flex flex-col gap-2.5",
+            span {
+                class: "grid size-10 place-items-center rounded-full bg-positive-soft text-positive",
+                aria_hidden: "true",
+                Icon { class: "size-5.5", icon: LdCheck }
             }
-            h1 {
-                id: "setup-step-title",
-                class: "setup-title",
-                tabindex: "-1",
-                "You're all set"
-            }
-            p { class: "supporting-text", role: "status",
+            StageTitle { "You're all set" }
+            p {
+                class: "supporting-text max-w-[76ch] leading-[1.55]",
+                role: "status",
                 if created == 1 {
                     "1 account created."
                 } else if created > 1 {
@@ -1166,7 +1233,8 @@ fn SetupDone() -> Element {
             }
         }
 
-        div { class: "setup-actions setup-done-actions",
+        // Up to three ways on from here, so on phones they stack instead of wrapping unevenly
+        div { class: "{ACTION_ROW} max-sm:flex-col max-sm:items-stretch",
             if let Some(bank_account_id) = result.bank_account_id {
                 if sync_provider.is_some() {
                     Link {

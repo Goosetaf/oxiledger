@@ -267,9 +267,7 @@ fn GettingStarted(progress: Progress) -> Element {
     };
 
     rsx! {
-        section {
-            class: "section-card getting-started",
-            aria_labelledby: "getting-started-title",
+        section { class: "section-card", aria_labelledby: "getting-started-title",
             div { class: "section-header",
                 div {
                     h2 { id: "getting-started-title", class: "section-title", "Getting started" }
@@ -287,24 +285,29 @@ fn GettingStarted(progress: Progress) -> Element {
                 div { class: "message message-error", role: "alert", "{err}" }
             }
 
-            ol { class: "getting-started-steps",
+            ol { class: "m-0 grid list-none gap-2 p-0",
                 for (index , step) in steps.into_iter().enumerate() {
-                    li { class: if step.done { "getting-started-step is-done" } else { "getting-started-step" },
+                    li { class: "flex items-center gap-3.5 rounded-md bg-white/3 px-3.5 py-3",
                         span {
-                            class: "getting-started-mark",
+                            class: "grid size-7 shrink-0 place-items-center rounded-full text-[0.75rem] font-bold",
+                            class: if step.done { "bg-positive-soft text-positive" } else { "bg-white/5 text-muted" },
                             aria_hidden: "true",
                             if step.done {
-                                Icon { class: "icon", icon: LdCheck }
+                                Icon { class: "size-4", icon: LdCheck }
                             } else {
                                 "{index + 1}"
                             }
                         }
-                        div { class: "getting-started-copy",
-                            span { class: "label-strong", "{step.title}" }
+                        div { class: "flex min-w-0 flex-1 flex-col gap-0.5",
+                            span { class: if step.done { "text-muted" } else { "label-strong" },
+                                "{step.title}"
+                            }
                             span { class: "supporting-text", "{step.detail}" }
                         }
                         if step.done {
-                            span { class: "getting-started-done", "Done" }
+                            span { class: "text-[0.75rem] font-bold tracking-[0.05em] text-positive uppercase",
+                                "Done"
+                            }
                         } else if step.ready {
                             Link { class: "btn btn-primary btn-sm", to: step.to, "{step.action}" }
                         }
