@@ -1,0 +1,7 @@
+/* Tailwind without its reset, so pages styled by main.css keep their look.
+   main.css is unlayered, so where both set the same thing main.css wins. */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "./src";

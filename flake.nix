@@ -63,7 +63,7 @@
           curl
           wget
           wasmBindgenCli
-          tailwindcss
+          tailwindcss_4
           sqlx-cli
         ];
       in

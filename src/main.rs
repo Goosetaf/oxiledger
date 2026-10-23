@@ -37,6 +37,8 @@ use views::{
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/styling/main.css");
+// Built by dx from tailwind.css in the project root
+const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
 /// All application routes. Auth routes are full-page; authenticated routes use the Navbar layout.
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -128,6 +130,7 @@ fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
+        document::Link { rel: "stylesheet", href: TAILWIND_CSS }
         // Lets the bottom bar keep clear of the iPhone home indicator
         document::Meta {
             name: "viewport",
