@@ -1,0 +1,49 @@
+/* Tailwind without its reset, so pages styled by main.css keep their look.
+   main.css is unlayered, so where both set the same thing main.css wins. */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "./src";
+
+/* The width where main.css switches to the phone layout and sets its gutters */
+@custom-variant phone (@media (max-width: 900px));
+
+/* Colours from main.css, so both stay in step */
+@theme inline {
+  --color-ink: var(--text);
+  --color-soft: var(--text-soft);
+  --color-muted: var(--text-muted);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-page: var(--bg);
+  --color-primary: var(--primary);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+}
+
+@theme {
+  --color-brand: #f97316;
+
+  --animate-ledger-row-in: ledger-row-in 1100ms ease-out;
+  --animate-nudge: nudge 1400ms ease-in-out 3;
+
+  @keyframes ledger-row-in {
+    from {
+      background-color: color-mix(in oklab, var(--color-brand) 26%, transparent);
+    }
+  }
+
+  @keyframes nudge {
+    0%,
+    100% {
+      transform: translateY(-3px);
+    }
+
+    50% {
+      transform: translateY(1px);
+    }
+  }
+}

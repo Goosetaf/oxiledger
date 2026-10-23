@@ -4,6 +4,7 @@ use uuid::Uuid;
 #[cfg(feature = "server")]
 mod bank_sync;
 mod components;
+mod milestones;
 mod models;
 mod navigation;
 mod preferences;
@@ -28,6 +29,7 @@ use views::{
     not_found::NotFound,
     oidc::{OidcCallback, OidcLogin},
     register::Register,
+    setup::Setup,
     transaction_edit::EditTransaction,
     transaction_new::{NewTransaction, NewTransactionFromBank},
     transactions::Transactions,
@@ -35,6 +37,8 @@ use views::{
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/styling/main.css");
+// Built by dx from tailwind.css in the project root
+const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
 /// All application routes. Auth routes are full-page; authenticated routes use the Navbar layout.
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -53,6 +57,9 @@ enum Route {
         OidcLogin {},
         #[route("/auth/oidc/callback")]
         OidcCallback {},
+        // Setup sits outside the Navbar layout and checks the session itself
+        #[route("/setup")]
+        Setup {},
         // Authenticated routes — wrapped in Navbar layout
         #[layout(Navbar)]
             #[route("/")]
@@ -80,8 +87,8 @@ enum Route {
             BankAccountDetail { id: Uuid },
             #[route("/bank-accounts/:id/edit")]
             BankAccountEdit { id: Uuid },
-            #[route("/bank-accounts/connect?:source_id")]
-            BankConnect { source_id: Option<Uuid> },
+            #[route("/bank-accounts/connect?:source_id&:provider")]
+            BankConnect { source_id: Option<Uuid>, provider: Option<String> },
             #[route("/bank-accounts/connect/map?:connection_id")]
             BankAccountMap { connection_id: Uuid },
             #[route("/customize")]
@@ -97,6 +104,7 @@ impl Route {
             Route::Register {} => "Create Account",
             Route::OidcLogin {} => "Sign In",
             Route::OidcCallback {} => "Signing In",
+            Route::Setup {} => "Set Up",
             Route::Dashboard {} => "Dashboard Overview",
             Route::Accounts {} => "Accounts",
             Route::NewAccount {} => "Accounts",
@@ -122,6 +130,7 @@ fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
+        document::Link { rel: "stylesheet", href: TAILWIND_CSS }
         // Lets the bottom bar keep clear of the iPhone home indicator
         document::Meta {
             name: "viewport",

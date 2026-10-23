@@ -95,6 +95,7 @@ impl Route {
             | Route::Register {}
             | Route::OidcLogin {}
             | Route::OidcCallback {}
+            | Route::Setup {}
             | Route::Customize {}
             | Route::NotFound { .. } => None,
         }

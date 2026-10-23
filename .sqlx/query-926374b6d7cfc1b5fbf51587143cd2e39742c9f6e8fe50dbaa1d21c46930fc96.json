@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO bank_accounts (user_id, internal_account_id, name, currency, is_manual)\n                 VALUES ($1, $2, $3, $4, TRUE)\n                 RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "926374b6d7cfc1b5fbf51587143cd2e39742c9f6e8fe50dbaa1d21c46930fc96"
+}

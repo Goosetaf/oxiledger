@@ -12,14 +12,7 @@ use sqlx::Row;
 pub async fn list_bank_sync_providers() -> Result<Vec<String>, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        let mut providers = Vec::new();
-        if crate::bank_sync::EnableBankingProvider::is_configured() {
-            providers.push("enable_banking".to_string());
-        }
-        if crate::bank_sync::GoCardlessProvider::is_configured() {
-            providers.push("gocardless".to_string());
-        }
-        return Ok(providers);
+        return Ok(crate::bank_sync::configured_provider_ids());
     }
 
     #[allow(unreachable_code)]
@@ -528,14 +521,17 @@ pub async fn link_existing_bank_account(
 }
 
 #[component]
-pub fn BankConnect(source_id: Option<Uuid>) -> Element {
+pub fn BankConnect(source_id: Option<Uuid>, provider: Option<String>) -> Element {
     let nav = use_navigator();
     let available_providers_resource = use_server_future(list_bank_sync_providers)?;
     let internal_accounts_resource =
         use_resource(crate::views::transactions::list_accounts_for_txn);
 
+    // Setup and the dashboard checklist link here with a provider to preselect.
     let mut selected_method = use_signal(|| {
-        if source_id.is_some() {
+        if let Some(provider) = provider {
+            provider
+        } else if source_id.is_some() {
             String::new()
         } else {
             "manual".to_string()
@@ -629,10 +625,16 @@ pub fn BankConnect(source_id: Option<Uuid>) -> Element {
                                     "Choose a provider"
                                 }
                                 if source_id.is_none() {
-                                    option { value: "manual", "Manual" }
+                                    option {
+                                        value: "manual",
+                                        selected: selected_method() == "manual",
+                                        "Manual"
+                                    }
                                 }
                                 for provider in provider_options.iter() {
-                                    option { value: "{provider}",
+                                    option {
+                                        value: "{provider}",
+                                        selected: selected_method() == *provider,
                                         {if provider == "gocardless" { "GoCardless" } else { "Enable Banking" }}
                                     }
                                 }

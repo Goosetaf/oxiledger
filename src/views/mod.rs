@@ -16,6 +16,7 @@ pub mod login;
 pub mod not_found;
 pub mod oidc;
 pub mod register;
+pub mod setup;
 pub mod transaction_edit;
 pub mod transaction_form;
 pub mod transaction_new;
