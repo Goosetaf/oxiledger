@@ -35,13 +35,13 @@ async fn setup_action(req: RegisterRequest) -> Result<(), ServerFnError> {
             return Err(ServerFnError::new("Password must be at least 8 characters"));
         }
 
-        let hash =
-            auth::hash_password(&req.password).map_err(|e| ServerFnError::new(e.to_string()))?;
-
         let mut tx = auth::begin_setup(&pool)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?
             .ok_or_else(|| ServerFnError::new("This instance is already set up"))?;
+
+        let hash =
+            auth::hash_password(&req.password).map_err(|e| ServerFnError::new(e.to_string()))?;
 
         let user_id = sqlx::query_scalar!(
             "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id",
