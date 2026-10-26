@@ -1,31 +1,5 @@
-use crate::models::oidc::OidcProviderInfo;
+use crate::{models::user::AuthOptions, views::login::get_auth_options};
 use dioxus::prelude::*;
-
-#[cfg(feature = "server")]
-use std::sync::Arc;
-
-/// Returns the list of configured OIDC providers and whether password login is enabled.
-/// This is the only server function needed in this module — the actual OAuth
-/// redirect and callback are handled by native axum routes, not server functions.
-#[get("/api/auth/oidc/config")]
-pub async fn get_oidc_config() -> Result<(Vec<OidcProviderInfo>, bool), ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        use dioxus::prelude::dioxus_fullstack::FullstackContext;
-
-        let ctx =
-            FullstackContext::current().ok_or_else(|| ServerFnError::new("No request context"))?;
-
-        let config = ctx
-            .extension::<Arc<crate::server::oidc::OidcConfig>>()
-            .ok_or_else(|| ServerFnError::new("OIDC config not available"))?;
-
-        return Ok((config.provider_infos(), !config.disable_password_login));
-    }
-
-    #[cfg(not(feature = "server"))]
-    Ok((vec![], true))
-}
 
 /// The OIDC login selection page.
 ///
@@ -33,9 +7,13 @@ pub async fn get_oidc_config() -> Result<(Vec<OidcProviderInfo>, bool), ServerFn
 /// When `DISABLE_PASSWORD_LOGIN=true` the link back to classic login is hidden.
 #[component]
 pub fn OidcLogin() -> Element {
-    let config_future = use_server_future(get_oidc_config)?;
+    let options_future = use_server_future(get_auth_options)?;
 
-    let (providers, password_enabled) = match config_future() {
+    let AuthOptions {
+        providers,
+        password_login: password_enabled,
+        ..
+    } = match options_future() {
         Some(Ok(v)) => v,
         Some(Err(e)) => return Err(e.into()),
         None => {

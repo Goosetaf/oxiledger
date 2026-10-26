@@ -30,3 +30,11 @@ pub struct CurrentUser {
     pub username: String,
     pub preferences: Preferences,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AuthOptions {
+    pub providers: Vec<crate::models::oidc::OidcProviderInfo>,
+    pub password_login: bool,
+    pub registration: bool,
+    pub needs_setup: bool,
+}

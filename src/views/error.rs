@@ -4,22 +4,28 @@ use dioxus_router::ParseRouteError;
 
 use crate::Route;
 
-fn commit_login_redirect() {
+fn commit_redirect(to: &Route) {
     #[cfg(feature = "server")]
     {
         use dioxus::prelude::dioxus_fullstack::{
             http::header::LOCATION, FullstackContext, HeaderValue,
         };
 
-        if let Some(ctx) = FullstackContext::current() {
-            ctx.add_response_header(LOCATION, HeaderValue::from_static("/login"));
+        let location = to.to_string();
+        if let (Some(ctx), Ok(value)) = (
+            FullstackContext::current(),
+            HeaderValue::from_str(&location),
+        ) {
+            ctx.add_response_header(LOCATION, value);
         }
 
         FullstackContext::commit_http_status(
             StatusCode::FOUND,
-            Some("Redirecting to /login".to_string()),
+            Some(format!("Redirecting to {location}")),
         );
     }
+    #[cfg(not(feature = "server"))]
+    let _ = to;
 }
 
 fn commit_status(status: StatusCode, message: String) {
@@ -112,7 +118,7 @@ pub fn LoginRedirectNotice(title: String, message: String) -> Element {
         nav.replace(crate::Route::Login {});
     });
 
-    commit_login_redirect();
+    commit_redirect(&Route::Login {});
 
     rsx! {
         div { class: "status-shell",
@@ -127,6 +133,19 @@ pub fn LoginRedirectNotice(title: String, message: String) -> Element {
             }
         }
     }
+}
+
+#[component]
+pub fn Redirect(to: Route) -> Element {
+    let nav = use_navigator();
+
+    commit_redirect(&to);
+
+    use_effect(move || {
+        nav.replace(to.clone());
+    });
+
+    rsx! {}
 }
 
 #[component]

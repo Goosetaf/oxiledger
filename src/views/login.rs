@@ -1,10 +1,48 @@
 use crate::components::button::Button;
+use crate::views::error::Redirect;
 use dioxus::prelude::*;
 
-use crate::models::user::LoginRequest;
+use crate::models::user::{AuthOptions, LoginRequest};
 
 #[cfg(feature = "server")]
 use tower_cookies::Cookie;
+
+/// Returns the available sign-in and sign-up methods, and whether setup is needed.
+#[get("/api/auth/options")]
+pub async fn get_auth_options() -> Result<AuthOptions, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use dioxus::prelude::dioxus_fullstack::FullstackContext;
+        use std::sync::Arc;
+
+        let ctx =
+            FullstackContext::current().ok_or_else(|| ServerFnError::new("No request context"))?;
+
+        let config = ctx
+            .extension::<Arc<crate::server::oidc::OidcConfig>>()
+            .ok_or_else(|| ServerFnError::new("OIDC config not available"))?;
+
+        let (pool, _) = crate::server::auth::extract_context().await?;
+        let needs_setup = crate::server::auth::needs_setup(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        return Ok(AuthOptions {
+            providers: config.provider_infos(),
+            password_login: !config.disable_password_login,
+            registration: config.allow_registration,
+            needs_setup,
+        });
+    }
+
+    #[cfg(not(feature = "server"))]
+    Ok(AuthOptions {
+        providers: vec![],
+        password_login: true,
+        registration: false,
+        needs_setup: false,
+    })
+}
 
 #[post("/api/auth/login")]
 async fn login_action(req: LoginRequest) -> Result<(), ServerFnError> {
@@ -66,11 +104,16 @@ async fn login_action(req: LoginRequest) -> Result<(), ServerFnError> {
 
 #[component]
 pub fn Login() -> Element {
-    // Fetch OIDC config so we can show provider buttons and conditionally hide
+    // Fetch auth options so we can show provider buttons and conditionally hide
     // the password form.
-    let config_future = use_server_future(crate::views::oidc::get_oidc_config)?;
+    let options_future = use_server_future(get_auth_options)?;
 
-    let (providers, password_enabled) = match config_future() {
+    let AuthOptions {
+        providers,
+        password_login: password_enabled,
+        registration,
+        needs_setup,
+    } = match options_future() {
         Some(Ok(v)) => v,
         Some(Err(e)) => return Err(e.into()),
         None => {
@@ -83,6 +126,13 @@ pub fn Login() -> Element {
             };
         }
     };
+
+    // Nobody can sign in before the first account exists.
+    if needs_setup {
+        return rsx! {
+            Redirect { to: crate::Route::Setup {} }
+        };
+    }
 
     let mut username = use_signal(String::new);
     let mut password = use_signal(String::new);
@@ -221,12 +271,14 @@ pub fn Login() -> Element {
                                 }
                             }
 
-                            p { class: "auth-footnote",
-                                "Need access? "
-                                Link {
-                                    to: crate::Route::Register {},
-                                    class: "auth-link",
-                                    "Create an account"
+                            if registration {
+                                p { class: "auth-footnote",
+                                    "Need access? "
+                                    Link {
+                                        to: crate::Route::Register {},
+                                        class: "auth-link",
+                                        "Create an account"
+                                    }
                                 }
                             }
                         }

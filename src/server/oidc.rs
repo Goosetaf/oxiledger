@@ -1,8 +1,14 @@
 use openidconnect::{
-    core::{CoreClient, CoreProviderMetadata, CoreResponseType},
-    AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, EndpointMaybeSet,
-    EndpointNotSet, EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier,
-    RedirectUrl, Scope, TokenResponse,
+    core::{
+        CoreAuthDisplay, CoreAuthPrompt, CoreErrorResponseType, CoreGenderClaim, CoreJsonWebKey,
+        CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm, CoreProviderMetadata,
+        CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse,
+        CoreTokenIntrospectionResponse, CoreTokenType,
+    },
+    AdditionalClaims, AuthenticationFlow, AuthorizationCode, Client, ClientId, ClientSecret,
+    CsrfToken, EmptyExtraTokenFields, EndpointMaybeSet, EndpointNotSet, EndpointSet, IdTokenClaims,
+    IdTokenFields, IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier,
+    RedirectUrl, Scope, StandardErrorResponse, StandardTokenResponse, TokenResponse,
 };
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -16,7 +22,38 @@ fn build_http_client() -> Result<reqwest::Client, reqwest::Error> {
         .build()
 }
 
-type StoredOidcClient = CoreClient<
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct GroupsClaim {
+    #[serde(default)]
+    pub groups: Vec<String>,
+}
+
+impl AdditionalClaims for GroupsClaim {}
+
+type OidcTokenResponse = StandardTokenResponse<
+    IdTokenFields<
+        GroupsClaim,
+        EmptyExtraTokenFields,
+        CoreGenderClaim,
+        CoreJweContentEncryptionAlgorithm,
+        CoreJwsSigningAlgorithm,
+    >,
+    CoreTokenType,
+>;
+
+/// Like `CoreClient`, but ID tokens carry the `groups` claim.
+type StoredOidcClient = Client<
+    GroupsClaim,
+    CoreAuthDisplay,
+    CoreGenderClaim,
+    CoreJweContentEncryptionAlgorithm,
+    CoreJsonWebKey,
+    CoreAuthPrompt,
+    StandardErrorResponse<CoreErrorResponseType>,
+    OidcTokenResponse,
+    CoreTokenIntrospectionResponse,
+    CoreRevocableToken,
+    CoreRevocationErrorResponse,
     EndpointSet,
     EndpointNotSet,
     EndpointNotSet,
@@ -24,6 +61,13 @@ type StoredOidcClient = CoreClient<
     EndpointMaybeSet,
     EndpointMaybeSet,
 >;
+
+/// `OIDC_N_ALLOWED_GROUPS`, where `*` means anyone.
+#[derive(Clone)]
+pub enum AllowedGroups {
+    Anyone,
+    Only(Vec<String>),
+}
 
 /// A single fully-configured OIDC provider (secrets included — server only).
 #[derive(Clone)]
@@ -34,6 +78,10 @@ pub struct OidcProvider {
     pub name: String,
     /// Discovered + configured openidconnect client.
     pub client: StoredOidcClient,
+    /// When `true`, anyone this provider signs in gets an account on their first sign-in.
+    pub allow_registration: bool,
+    /// Who may sign in through this provider, checked on every sign-in.
+    pub allowed_groups: AllowedGroups,
 }
 
 /// App-level OIDC configuration shared across requests via `Arc`.
@@ -42,6 +90,8 @@ pub struct OidcConfig {
     pub providers: Vec<OidcProvider>,
     /// When `true`, the `/api/auth/login` endpoint and the login form are disabled.
     pub disable_password_login: bool,
+    /// When `true`, anyone can create a password account. OIDC has its own per-provider setting.
+    pub allow_registration: bool,
 }
 
 impl OidcConfig {
@@ -64,13 +114,18 @@ impl OidcConfig {
 
 // ── Config loading ────────────────────────────────────────────────────────────
 
+fn env_var_is_true(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+        .unwrap_or(false)
+}
+
 /// Load all OIDC providers from environment variables and perform OIDC discovery
 /// for each.  Providers without a complete set of required vars are skipped with
 /// a warning; a gap in numbering stops the scan.
 pub async fn load_config() -> OidcConfig {
-    let disable_password_login = std::env::var("DISABLE_PASSWORD_LOGIN")
-        .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-        .unwrap_or(false);
+    let disable_password_login = env_var_is_true("DISABLE_PASSWORD_LOGIN");
+    let allow_registration = env_var_is_true("ALLOW_REGISTRATION");
 
     let base_url = std::env::var("BASE_URL").unwrap_or_default();
     let http_client = match build_http_client() {
@@ -80,6 +135,7 @@ pub async fn load_config() -> OidcConfig {
             return OidcConfig {
                 providers: Vec::new(),
                 disable_password_login,
+                allow_registration,
             };
         }
     };
@@ -126,6 +182,24 @@ pub async fn load_config() -> OidcConfig {
             }
         };
 
+        let groups: Vec<String> = std::env::var(format!("{prefix}ALLOWED_GROUPS"))
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|g| !g.is_empty())
+            .map(String::from)
+            .collect();
+        let allowed_groups = if groups.iter().any(|g| g == "*") {
+            AllowedGroups::Anyone
+        } else if groups.is_empty() {
+            eprintln!(
+                "[oidc] OIDC_{n}_ALLOWED_GROUPS missing (use * to allow anyone) — skipping provider {n}"
+            );
+            continue;
+        } else {
+            AllowedGroups::Only(groups)
+        };
+
         // Perform OIDC discovery (fetches /.well-known/openid-configuration).
         let issuer_url = match IssuerUrl::new(issuer.clone()) {
             Ok(u) => u,
@@ -143,7 +217,7 @@ pub async fn load_config() -> OidcConfig {
             }
         };
 
-        let client = CoreClient::from_provider_metadata(
+        let client: StoredOidcClient = Client::from_provider_metadata(
             metadata,
             ClientId::new(client_id),
             Some(ClientSecret::new(client_secret)),
@@ -161,12 +235,15 @@ pub async fn load_config() -> OidcConfig {
             id: n.to_string(),
             name,
             client,
+            allow_registration: env_var_is_true(&format!("{prefix}ALLOW_REGISTRATION")),
+            allowed_groups,
         });
     }
 
     OidcConfig {
         providers,
         disable_password_login,
+        allow_registration,
     }
 }
 
@@ -198,7 +275,7 @@ pub async fn handle_start(
     let nonce = Nonce::new_random();
     let nonce_for_url = nonce.clone();
 
-    let (auth_url, csrf_token, _returned_nonce) = provider
+    let mut auth_request = provider
         .client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
@@ -207,9 +284,14 @@ pub async fn handle_start(
         )
         .add_scope(Scope::new("openid".to_string()))
         .add_scope(Scope::new("email".to_string()))
-        .add_scope(Scope::new("profile".to_string()))
-        .set_pkce_challenge(pkce_challenge)
-        .url();
+        .add_scope(Scope::new("profile".to_string()));
+
+    if matches!(provider.allowed_groups, AllowedGroups::Only(_)) {
+        auth_request = auth_request.add_scope(Scope::new("groups".to_string()));
+    }
+
+    let (auth_url, csrf_token, _returned_nonce) =
+        auth_request.set_pkce_challenge(pkce_challenge).url();
 
     let expires_at = chrono::Utc::now() + chrono::Duration::minutes(10);
 
@@ -240,7 +322,8 @@ pub async fn handle_start(
 /// `GET /auth/oidc/callback?code=...&state=...`
 ///
 /// Validates the CSRF state, exchanges the authorization code for tokens, extracts
-/// identity claims, upserts the user row, creates a session, and redirects to `/`.
+/// identity claims, checks the user's groups and that the identity may have an account,
+/// upserts the user row, creates a session, and redirects to `/`.
 pub async fn handle_callback(
     axum::extract::Query(params): axum::extract::Query<CallbackParams>,
     axum::extract::Extension(pool): axum::extract::Extension<PgPool>,
@@ -374,7 +457,41 @@ pub async fn handle_callback(
         .map(|u| u.to_string())
         .unwrap_or_else(|| email.split('@').next().unwrap_or(&subject).to_string());
 
-    // 5. Upsert the user row.
+    // 5. Providers limited to some groups only let their members in, on every sign-in.
+    if let AllowedGroups::Only(allowed) = &provider.allowed_groups {
+        let groups = user_groups(provider, &token_response, claims, &http_client).await;
+        if !groups.iter().any(|g| allowed.contains(g)) {
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                "Your account isn't in a group that may use this instance. Contact your administrator to get access.",
+            )
+                .into_response();
+        }
+    }
+
+    // 6. Unless registration is open, require an existing account or an empty instance to set up.
+    if !provider.allow_registration {
+        match has_account_or_set_up(&pool, &username, &email, &provider_id_str, &subject).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return (
+                    axum::http::StatusCode::FORBIDDEN,
+                    "Registration is disabled. Contact your administrator to get access.",
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                eprintln!("[oidc] Account lookup failed: {e}");
+                return (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "Authentication error",
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    // 7. Upsert the user row.
     //    On conflict (same provider + subject) we update the email so it stays fresh.
     //    The UNIQUE constraint on (oidc_provider, oidc_subject) set in migration 0002
     //    ensures we never create a duplicate identity.
@@ -429,7 +546,7 @@ pub async fn handle_callback(
         }
     };
 
-    // 6. Create a local session cookie (same mechanism as password login).
+    // 8. Create a local session cookie (same mechanism as password login).
     let token = match crate::server::auth::create_session(&pool, user_id).await {
         Ok(t) => t,
         Err(e) => {
@@ -449,6 +566,78 @@ pub async fn handle_callback(
     cookies.add(cookie);
 
     axum::response::Redirect::temporary("/").into_response()
+}
+
+/// The user's groups from the ID token, falling back to the user info endpoint.
+async fn user_groups(
+    provider: &OidcProvider,
+    token_response: &OidcTokenResponse,
+    claims: &IdTokenClaims<GroupsClaim, CoreGenderClaim>,
+    http_client: &reqwest::Client,
+) -> Vec<String> {
+    let groups = &claims.additional_claims().groups;
+    if !groups.is_empty() {
+        return groups.clone();
+    }
+
+    let request = match provider.client.user_info(
+        token_response.access_token().clone(),
+        Some(claims.subject().clone()),
+    ) {
+        Ok(r) => r,
+        // The provider has no user info endpoint.
+        Err(_) => return Vec::new(),
+    };
+
+    match request
+        .request_async::<GroupsClaim, _, CoreGenderClaim>(http_client)
+        .await
+    {
+        Ok(info) => info.additional_claims().groups.clone(),
+        Err(e) => {
+            eprintln!("[oidc] User info request failed: {e}");
+            Vec::new()
+        }
+    }
+}
+
+/// Whether the identity has an account, creating it as the first user on an empty instance.
+async fn has_account_or_set_up(
+    pool: &PgPool,
+    username: &str,
+    email: &str,
+    provider_id: &str,
+    subject: &str,
+) -> Result<bool, sqlx::Error> {
+    let known = sqlx::query_scalar!(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE oidc_provider = $1 AND oidc_subject = $2)",
+        provider_id,
+        subject
+    )
+    .fetch_one(pool)
+    .await?
+    .unwrap_or(false);
+
+    if known {
+        return Ok(true);
+    }
+
+    let Some(mut tx) = crate::server::auth::begin_setup(pool).await? else {
+        return Ok(false);
+    };
+
+    sqlx::query!(
+        "INSERT INTO users (username, email, oidc_provider, oidc_subject) VALUES ($1, $2, $3, $4)",
+        username,
+        email,
+        provider_id,
+        subject
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(true)
 }
 
 /// Query parameters received on the OIDC callback URL.
