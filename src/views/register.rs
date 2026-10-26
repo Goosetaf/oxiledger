@@ -1,7 +1,7 @@
 use crate::components::button::Button;
 use dioxus::prelude::*;
 
-use crate::models::user::RegisterRequest;
+use crate::models::user::{AuthOptions, RegisterRequest};
 
 #[cfg(feature = "server")]
 use tower_cookies::Cookie;
@@ -15,17 +15,20 @@ async fn register_action(req: RegisterRequest) -> Result<(), ServerFnError> {
 
         let (pool, cookies) = auth::extract_context().await?;
 
-        // Block registration when password login is disabled.
+        // Block registration when it's closed or password login is disabled.
         {
             use dioxus::prelude::dioxus_fullstack::FullstackContext;
-            if let Some(ctx) = FullstackContext::current() {
-                if let Some(config) = ctx.extension::<Arc<crate::server::oidc::OidcConfig>>() {
-                    if config.disable_password_login {
-                        return Err(ServerFnError::new(
-                            "Password login is disabled. Please use SSO.",
-                        ));
-                    }
-                }
+            let config = FullstackContext::current()
+                .and_then(|ctx| ctx.extension::<Arc<crate::server::oidc::OidcConfig>>())
+                .ok_or_else(|| ServerFnError::new("OIDC config not available"))?;
+
+            if !config.allow_registration {
+                return Err(ServerFnError::new("Registration is disabled"));
+            }
+            if config.disable_password_login {
+                return Err(ServerFnError::new(
+                    "Password login is disabled. Please use SSO.",
+                ));
             }
         }
 
@@ -76,10 +79,14 @@ async fn register_action(req: RegisterRequest) -> Result<(), ServerFnError> {
 
 #[component]
 pub fn Register() -> Element {
-    // Check whether password login is enabled before rendering the form.
-    let config_future = use_server_future(crate::views::oidc::get_oidc_config)?;
+    // Check whether registration and password login are enabled before rendering the form.
+    let options_future = use_server_future(crate::views::login::get_auth_options)?;
 
-    let (_providers, password_enabled) = match config_future() {
+    let AuthOptions {
+        password_login: password_enabled,
+        registration,
+        ..
+    } = match options_future() {
         Some(Ok(v)) => v,
         Some(Err(e)) => return Err(e.into()),
         None => {
@@ -93,8 +100,8 @@ pub fn Register() -> Element {
         }
     };
 
-    // If password login is disabled, redirect to the SSO page.
-    if !password_enabled {
+    // If registration is closed or needs SSO, explain instead of showing the form.
+    if !registration || !password_enabled {
         return rsx! {
             div { class: "auth-shell",
                 div { class: "auth-shell-inner",
@@ -116,8 +123,14 @@ pub fn Register() -> Element {
                         div { class: "auth-panel-body",
                             div { class: "auth-copy",
                                 h2 { class: "section-title", "Registration is disabled" }
-                                p { class: "supporting-text",
-                                    "This instance requires single sign-on. Contact your administrator to get access."
+                                if !registration {
+                                    p { class: "supporting-text",
+                                        "Password sign-ups are closed on this instance. Contact your administrator to get access."
+                                    }
+                                } else {
+                                    p { class: "supporting-text",
+                                        "This instance requires single sign-on. Contact your administrator to get access."
+                                    }
                                 }
                             }
                             Link {

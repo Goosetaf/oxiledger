@@ -28,6 +28,7 @@ use views::{
     not_found::NotFound,
     oidc::{OidcCallback, OidcLogin},
     register::Register,
+    setup::Setup,
     transaction_edit::EditTransaction,
     transaction_new::{NewTransaction, NewTransactionFromBank},
     transactions::Transactions,
@@ -46,6 +47,8 @@ enum Route {
         Login {},
         #[route("/register")]
         Register {},
+        #[route("/setup")]
+        Setup {},
         // OIDC routes — OidcLogin lists configured providers.
         // /auth/oidc/:id/start and /auth/oidc/callback are native axum handlers
         // registered in server_main; they redirect the browser and never reach here.
@@ -95,6 +98,7 @@ impl Route {
         match self {
             Route::Login {} => "Sign In",
             Route::Register {} => "Create Account",
+            Route::Setup {} => "Set Up",
             Route::OidcLogin {} => "Sign In",
             Route::OidcCallback {} => "Signing In",
             Route::Dashboard {} => "Dashboard Overview",

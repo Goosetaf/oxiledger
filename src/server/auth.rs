@@ -55,6 +55,26 @@ pub async fn delete_session(pool: &PgPool, token: &str) -> Result<(), sqlx::Erro
     Ok(())
 }
 
+pub async fn needs_setup(db: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
+    let has_users = sqlx::query_scalar!("SELECT EXISTS(SELECT 1 FROM users)")
+        .fetch_one(db)
+        .await?
+        .unwrap_or(false);
+    Ok(!has_users)
+}
+
+/// Begins creating the first user, or `None` if users exist. Blocks user inserts until it ends.
+pub async fn begin_setup(
+    pool: &PgPool,
+) -> Result<Option<sqlx::Transaction<'static, sqlx::Postgres>>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query!("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
+        .execute(&mut *tx)
+        .await?;
+
+    Ok(needs_setup(&mut *tx).await?.then_some(tx))
+}
+
 /// Extract and validate the session cookie, returning the authenticated user_id.
 /// Returns `Err` with a suitable message if unauthenticated or the session has expired.
 pub async fn require_auth(pool: &PgPool, cookies: &Cookies) -> Result<Uuid, ServerFnError> {

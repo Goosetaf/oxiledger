@@ -93,6 +93,7 @@ impl Route {
             | Route::BankAccountMap { .. } => Some(Destination::BankAccounts),
             Route::Login {}
             | Route::Register {}
+            | Route::Setup {}
             | Route::OidcLogin {}
             | Route::OidcCallback {}
             | Route::Customize {}

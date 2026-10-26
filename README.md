@@ -10,20 +10,26 @@ This project is primarily designed to run with Docker.
 
 OxiLedger uses environment variables for configuration. They are defined as follows:
 
-| Variable                 | Description                                                                                               | Default                         |
-| ------------------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| `DATABASE_URL`           | The URL for the PostgreSQL database.                                                                      | _required_                      |
-| `OIDC_N_ISSUER`          | OIDC issuer URL for authentication.                                                                       | _null_                          |
-| `OIDC_N_CLIENT_ID`       | OIDC client ID for authentication.                                                                        | _null_                          |
-| `OIDC_N_CLIENT_SECRET`   | OIDC client secret for authentication.                                                                    | _null_                          |
-| `OIDC_N_NAME`            | Display name for the OIDC provider.                                                                       | _the issuer URL_                |
-| `OIDC_N_REDIRECT_URI`    | Optional. Overrides the redirect URI built from `BASE_URL`.                                               | `<BASE_URL>/auth/oidc/callback` |
-| `DISABLE_PASSWORD_LOGIN` | If set to `true` or `1`, disables password-based login and registration.                                  | `false`                         |
-| `BASE_URL`               | The base URL for the application, used in OIDC and bank sync redirect URIs. Leave off the trailing slash. | _null_                          |
-| `IP`                     | The address the server listens on. The Docker image sets it to `0.0.0.0`.                                 | `127.0.0.1`                     |
-| `PORT`                   | The port the server listens on.                                                                           | `8080`                          |
+| Variable                    | Description                                                                                               | Default                         |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `DATABASE_URL`              | The URL for the PostgreSQL database.                                                                      | _required_                      |
+| `OIDC_N_ISSUER`             | OIDC issuer URL for authentication.                                                                       | _null_                          |
+| `OIDC_N_CLIENT_ID`          | OIDC client ID for authentication.                                                                        | _null_                          |
+| `OIDC_N_CLIENT_SECRET`      | OIDC client secret for authentication.                                                                    | _null_                          |
+| `OIDC_N_NAME`               | Display name for the OIDC provider.                                                                       | _the issuer URL_                |
+| `OIDC_N_REDIRECT_URI`       | Optional. Overrides the redirect URI built from `BASE_URL`.                                               | `<BASE_URL>/auth/oidc/callback` |
+| `OIDC_N_ALLOW_REGISTRATION` | If set to `true` or `1`, anyone the provider signs in gets an account on their first sign-in.             | `false`                         |
+| `OIDC_N_ALLOWED_GROUPS`     | Comma-separated groups (from the `groups` claim) that can sign in with the provider, or `*` for anyone.   | _required_                      |
+| `DISABLE_PASSWORD_LOGIN`    | If set to `true` or `1`, disables password-based login and registration.                                  | `false`                         |
+| `ALLOW_REGISTRATION`        | If set to `true` or `1`, anyone can create an account with a username and password.                       | `false`                         |
+| `BASE_URL`                  | The base URL for the application, used in OIDC and bank sync redirect URIs. Leave off the trailing slash. | _null_                          |
+| `IP`                        | The address the server listens on. The Docker image sets it to `0.0.0.0`.                                 | `127.0.0.1`                     |
+| `PORT`                      | The port the server listens on.                                                                           | `8080`                          |
 
 Replace `N` in the OIDC variables with a number (e.g. `OIDC_1_ISSUER`) to configure one or multiple OIDC providers. The numbers must be sequential and start at 1.
+
+> [!NOTE]
+> On first start, a setup screen creates the first account, whatever the registration settings are.
 
 ### Bank sync
 
