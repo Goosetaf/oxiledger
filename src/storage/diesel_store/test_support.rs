@@ -11,6 +11,8 @@ use crate::storage::Storage;
 /// Set to a Postgres URL to run the repository tests against Postgres as well as SQLite.
 pub const POSTGRES_URL_VAR: &str = "OXILEDGER_TEST_POSTGRES_URL";
 
+const SETUP_LOCK: i64 = 0x6f78_6974_6573_7473;
+
 pub struct TestDatabase {
     pub storage: Storage,
     _cleanup: Cleanup,
@@ -74,8 +76,15 @@ pub fn postgres_schema() -> Option<(String, Cleanup)> {
     let schema = format!("test_{}", Uuid::new_v4().simple());
 
     let mut conn = PgConnection::establish(&url).expect("failed to connect to test Postgres");
-    conn.batch_execute(&format!("CREATE SCHEMA \"{schema}\""))
-        .expect("failed to create the test schema");
+    // The first migration installs pgcrypto if it is missing, which would put it in the test
+    // schema and take it away from the other tests when that schema is dropped.
+    conn.batch_execute(&format!(
+        "SELECT pg_advisory_lock({SETUP_LOCK});
+         CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+         SELECT pg_advisory_unlock({SETUP_LOCK});
+         CREATE SCHEMA \"{schema}\""
+    ))
+    .expect("failed to create the test schema");
 
     let separator = if url.contains('?') { '&' } else { '?' };
     let scoped_url = format!("{url}{separator}options=-c%20search_path%3D{schema}");
