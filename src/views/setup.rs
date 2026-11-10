@@ -12,10 +12,10 @@ use tower_cookies::Cookie;
 async fn setup_action(req: RegisterRequest) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::server::auth;
+        use crate::{server::auth, storage::users::NewUser};
         use std::sync::Arc;
 
-        let (pool, cookies) = auth::extract_context().await?;
+        let (storage, cookies) = auth::extract_context().await?;
 
         // With password login disabled, the first account comes from SSO instead.
         {
@@ -35,29 +35,26 @@ async fn setup_action(req: RegisterRequest) -> Result<(), ServerFnError> {
             return Err(ServerFnError::new("Password must be at least 8 characters"));
         }
 
-        let mut tx = auth::begin_setup(&pool)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?
-            .ok_or_else(|| ServerFnError::new("This instance is already set up"))?;
+        // Saves hashing a password that cannot be used; `create_first` checks again.
+        if !auth::needs_setup(&storage).await? {
+            return Err(ServerFnError::new("This instance is already set up"));
+        }
 
         let hash =
             auth::hash_password(&req.password).map_err(|e| ServerFnError::new(e.to_string()))?;
 
-        let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id",
-            req.username,
-            req.email,
-            hash
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let user_id = storage
+            .users
+            .create_first(NewUser {
+                username: req.username,
+                email: req.email,
+                password_hash: Some(hash),
+                oidc: None,
+            })
+            .await?
+            .ok_or_else(|| ServerFnError::new("This instance is already set up"))?;
 
-        tx.commit()
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        let token = auth::create_session(&pool, user_id)
+        let token = auth::create_session(&storage, user_id)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 

@@ -12,10 +12,13 @@ pub async fn create_manual_bank_account(
 ) -> Result<Uuid, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::server::auth::{extract_context, require_auth};
+        use crate::{
+            server::auth::{extract_context, require_auth},
+            storage::bank_accounts::BankAccountDetails,
+        };
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
         let name_trimmed = name.trim().to_string();
         if name_trimmed.is_empty() {
@@ -29,39 +32,22 @@ pub async fn create_manual_bank_account(
 
         // Verify the selected ledger account belongs to this user (only when provided).
         if let Some(account_id) = internal_account_id {
-            let count = sqlx::query_scalar!(
-                "SELECT COUNT(*) FROM accounts WHERE id = $1 AND user_id = $2",
-                account_id,
-                user_id
-            )
-            .fetch_one(&pool)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?
-            .unwrap_or(0);
-
-            if count == 0 {
+            if storage.accounts.find(user_id, account_id).await?.is_none() {
                 return Err(ServerFnError::new("Ledger account not found"));
             }
         }
 
-        let iban_opt = iban.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let details = BankAccountDetails {
+            name: name_trimmed,
+            iban: iban.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+            currency: currency_trimmed,
+            internal_account_id,
+        };
 
-        let id: Uuid = sqlx::query_scalar(
-            r#"INSERT INTO bank_accounts
-                (user_id, internal_account_id, name, iban, currency, is_manual)
-            VALUES ($1, $2, $3, $4, $5, TRUE)
-            RETURNING id"#,
-        )
-        .bind(user_id)
-        .bind(internal_account_id)
-        .bind(name_trimmed)
-        .bind(iban_opt)
-        .bind(currency_trimmed)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(id);
+        return Ok(storage
+            .bank_accounts
+            .create_manual(user_id, details)
+            .await?);
     }
 
     #[allow(unreachable_code)]

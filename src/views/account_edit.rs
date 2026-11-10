@@ -1,5 +1,5 @@
 use crate::{
-    models::account::{Account, AccountType, CreateAccountRequest, NormalBalance},
+    models::account::{Account, CreateAccountRequest},
     views::account_form::AccountForm,
 };
 use dioxus::prelude::*;
@@ -11,26 +11,14 @@ async fn get_account(id: Uuid) -> Result<Account, ServerFnError> {
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let account = sqlx::query_as!(
-            Account,
-            r#"SELECT
-                id, user_id, name, code,
-                account_type AS "account_type: AccountType",
-                normal_balance AS "normal_balance: NormalBalance",
-                description, is_active
-            FROM accounts
-            WHERE id = $1 AND user_id = $2"#,
-            id,
-            user_id
-        )
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(account);
+        return storage
+            .accounts
+            .find(user_id, id)
+            .await?
+            .ok_or_else(|| ServerFnError::new("Account not found"));
     }
 
     #[allow(unreachable_code)]
@@ -41,48 +29,23 @@ async fn get_account(id: Uuid) -> Result<Account, ServerFnError> {
 async fn update_account(id: Uuid, req: CreateAccountRequest) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::server::auth::{extract_context, require_auth};
+        use crate::{
+            server::auth::{extract_context, require_auth},
+            views::account_new::{account_draft, account_save_error},
+        };
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        if req.name.trim().is_empty() {
-            return Err(ServerFnError::new("Account name cannot be empty"));
-        }
+        let draft = account_draft(req)?;
 
-        let normal_balance = req.account_type.default_normal_balance();
+        let updated = storage
+            .accounts
+            .update(user_id, id, draft)
+            .await
+            .map_err(account_save_error)?;
 
-        let result = sqlx::query!(
-            r#"UPDATE accounts
-            SET name = $3,
-                code = $4,
-                account_type = $5,
-                normal_balance = $6,
-                description = $7,
-                updated_at = NOW()
-            WHERE id = $1 AND user_id = $2"#,
-            id,
-            user_id,
-            req.name.trim(),
-            req.code.as_deref().map(str::trim).filter(|s| !s.is_empty()),
-            req.account_type as _,
-            normal_balance as _,
-            req.description
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-        )
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("unique") {
-                ServerFnError::new("An account with that code already exists")
-            } else {
-                ServerFnError::new(e.to_string())
-            }
-        })?;
-
-        if result.rows_affected() == 0 {
+        if !updated {
             return Err(ServerFnError::new("Account not found"));
         }
     }

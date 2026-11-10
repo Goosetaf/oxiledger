@@ -11,8 +11,68 @@ use dioxus::prelude::*;
 use uuid::Uuid;
 
 #[cfg(feature = "server")]
-pub(crate) async fn validate_linked_bank_transactions(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+use crate::storage::{transactions::TransactionDraft, Storage, StorageError};
+
+/// Checks what the transaction form sent and tidies it for storing. `current_transaction_id`
+/// is the transaction being edited, whose own bank transactions stay available to it.
+#[cfg(feature = "server")]
+pub(crate) async fn transaction_draft(
+    storage: &Storage,
+    req: CreateTransactionRequest,
+    user_id: Uuid,
+    current_transaction_id: Option<Uuid>,
+) -> Result<TransactionDraft, ServerFnError> {
+    if req.entries.len() < 2 {
+        return Err(ServerFnError::new(
+            "A transaction requires at least two journal entry lines",
+        ));
+    }
+
+    if !req.is_balanced() {
+        return Err(ServerFnError::new(
+            "Transaction is not balanced: sum of debits must equal sum of credits",
+        ));
+    }
+
+    validate_linked_bank_transactions(storage, &req, user_id, current_transaction_id).await?;
+
+    let non_empty = |value: Option<String>| {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+
+    Ok(TransactionDraft {
+        date: req.date,
+        description: req.description.trim().to_string(),
+        reference: non_empty(req.reference),
+        entries: req
+            .entries
+            .into_iter()
+            .map(|entry| JournalEntryInput {
+                memo: non_empty(entry.memo),
+                ..entry
+            })
+            .collect(),
+    })
+}
+
+#[cfg(feature = "server")]
+pub(crate) fn transaction_save_error(err: StorageError) -> ServerFnError {
+    match err {
+        // Another request linked the bank transaction after it was checked.
+        StorageError::Conflict(_) => {
+            ServerFnError::new("One or more bank transactions are already linked elsewhere")
+        }
+        other => other.into(),
+    }
+}
+
+#[cfg(feature = "server")]
+async fn validate_linked_bank_transactions(
+    storage: &Storage,
     req: &CreateTransactionRequest,
     user_id: Uuid,
     current_transaction_id: Option<Uuid>,
@@ -41,28 +101,13 @@ pub(crate) async fn validate_linked_bank_transactions(
         return Ok(());
     }
 
-    let rows = sqlx::query!(
-        r#"
-        SELECT
-            bt.id,
-            bt.date,
-            bt.amount AS "amount: Decimal",
-            bt.status,
-        ba.internal_account_id AS "internal_account_id?: Uuid",
-            linked_je.transaction_id AS "existing_transaction_id?: Uuid"
-        FROM bank_transactions bt
-        JOIN bank_accounts ba ON ba.id = bt.bank_account_id
-        LEFT JOIN journal_entries linked_je ON linked_je.id = bt.linked_journal_entry_id
-        WHERE bt.id = ANY($1) AND bt.user_id = $2
-        "#,
-        &bank_txn_ids,
-        user_id
-    )
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let expected_count = bank_txn_ids.len();
+    let rows = storage
+        .bank_transactions
+        .link_info(user_id, bank_txn_ids)
+        .await?;
 
-    if rows.len() != bank_txn_ids.len() {
+    if rows.len() != expected_count {
         return Err(ServerFnError::new(
             "One or more linked bank transactions could not be found",
         ));
@@ -102,7 +147,7 @@ pub(crate) async fn validate_linked_bank_transactions(
 
         let is_available = row.status == "pending"
             || current_transaction_id
-                .is_some_and(|txn_id| row.existing_transaction_id == Some(txn_id));
+                .is_some_and(|txn_id| row.linked_transaction_id == Some(txn_id));
 
         if !is_available {
             return Err(ServerFnError::new(
@@ -152,84 +197,16 @@ pub async fn create_transaction(req: CreateTransactionRequest) -> Result<Uuid, S
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        if req.entries.len() < 2 {
-            return Err(ServerFnError::new(
-                "A transaction requires at least two journal entry lines",
-            ));
-        }
+        let draft = transaction_draft(&storage, req, user_id, None).await?;
 
-        if !req.is_balanced() {
-            return Err(ServerFnError::new(
-                "Transaction is not balanced: sum of debits must equal sum of credits",
-            ));
-        }
-
-        let mut tx = pool
-            .begin()
+        return storage
+            .transactions
+            .create(user_id, draft)
             .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        validate_linked_bank_transactions(&mut tx, &req, user_id, None).await?;
-
-        let txn_id = sqlx::query_scalar!(
-            "INSERT INTO transactions (user_id, date, description, reference)
-             VALUES ($1, $2, $3, $4) RETURNING id",
-            user_id,
-            req.date,
-            req.description.trim(),
-            req.reference
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        for entry in &req.entries {
-            let je_id = sqlx::query_scalar!(
-                "INSERT INTO journal_entries (transaction_id, account_id, entry_type, amount, memo, bank_transaction_id)
-                 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-                txn_id,
-                entry.account_id,
-                entry.entry_type as _,
-                entry.amount,
-                entry
-                    .memo
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty()),
-                entry.bank_transaction_id
-            )
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-            // If this entry is linked to a bank transaction, mark it as linked
-            // and record the journal entry reference.
-            if let Some(bank_txn_id) = entry.bank_transaction_id {
-                sqlx::query!(
-                    r#"UPDATE bank_transactions
-                       SET status = 'linked', linked_journal_entry_id = $1
-                       WHERE id = $2 AND user_id = $3"#,
-                    je_id,
-                    bank_txn_id,
-                    user_id
-                )
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
-            }
-        }
-
-        tx.commit()
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(txn_id);
+            .map_err(transaction_save_error);
     }
 
     #[allow(unreachable_code)]
@@ -246,38 +223,16 @@ pub async fn get_bank_transaction_prefill(
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let row = sqlx::query!(
-            r#"SELECT bt.id, bt.date, bt.amount, bt.description, bt.reference,
-                      ba.internal_account_id AS "internal_account_id?: Uuid",
-                      a.name AS "internal_account_name?",
-                      bt.currency
-               FROM bank_transactions bt
-               JOIN bank_accounts ba ON ba.id = bt.bank_account_id
-               LEFT JOIN accounts a ON a.id = ba.internal_account_id
-               WHERE bt.id = $1 AND bt.user_id = $2 AND bt.status = 'pending'"#,
-            bank_txn_id,
-            user_id
-        )
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| {
-            ServerFnError::new("Bank transaction not found or already linked/dismissed")
-        })?;
-
-        return Ok(BankTransactionPrefill {
-            bank_transaction_id: row.id,
-            date: row.date,
-            amount: row.amount,
-            description: row.description,
-            reference: row.reference,
-            internal_account_id: row.internal_account_id,
-            internal_account_name: row.internal_account_name,
-            currency: row.currency,
-        });
+        return storage
+            .bank_transactions
+            .find_pending_prefill(user_id, bank_txn_id)
+            .await?
+            .ok_or_else(|| {
+                ServerFnError::new("Bank transaction not found or already linked/dismissed")
+            });
     }
 
     #[allow(unreachable_code)]
@@ -295,39 +250,13 @@ pub async fn list_pending_bank_transaction_prefills(
         let date = chrono::NaiveDate::parse_from_str(&date_text, "%Y-%m-%d")
             .map_err(|_| ServerFnError::new("Invalid transaction date"))?;
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let rows = sqlx::query!(
-            r#"SELECT bt.id, bt.date, bt.amount, bt.description, bt.reference,
-                      ba.internal_account_id AS "internal_account_id?: Uuid",
-                      a.name AS "internal_account_name?",
-                      bt.currency
-               FROM bank_transactions bt
-               JOIN bank_accounts ba ON ba.id = bt.bank_account_id
-               LEFT JOIN accounts a ON a.id = ba.internal_account_id
-               WHERE bt.user_id = $1 AND bt.status = 'pending' AND bt.date = $2
-               ORDER BY COALESCE(a.code, ''), COALESCE(a.name, ''), bt.amount DESC, bt.imported_at DESC"#,
-            user_id,
-            date
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(rows
-            .into_iter()
-            .map(|row| BankTransactionPrefill {
-                bank_transaction_id: row.id,
-                date: row.date,
-                amount: row.amount,
-                description: row.description,
-                reference: row.reference,
-                internal_account_id: row.internal_account_id,
-                internal_account_name: row.internal_account_name,
-                currency: row.currency,
-            })
-            .collect());
+        return Ok(storage
+            .bank_transactions
+            .list_pending_prefills(user_id, date)
+            .await?);
     }
 
     #[allow(unreachable_code)]
@@ -342,53 +271,13 @@ pub async fn suggest_transfer_matches(
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let rows = sqlx::query!(
-            r#"
-            SELECT
-                bt.id,
-                bt.date,
-                bt.amount,
-                bt.description,
-                bt.reference,
-                ba.internal_account_id AS "internal_account_id?: Uuid",
-                a.name AS "internal_account_name?",
-                bt.currency
-            FROM bank_transactions source
-            JOIN bank_transactions bt
-                ON bt.user_id = source.user_id
-               AND bt.status = 'pending'
-               AND bt.id <> source.id
-               AND bt.bank_account_id <> source.bank_account_id
-               AND bt.date = source.date
-               AND bt.amount = -source.amount
-            JOIN bank_accounts ba ON ba.id = bt.bank_account_id
-            LEFT JOIN accounts a ON a.id = ba.internal_account_id
-            WHERE source.id = $1 AND source.user_id = $2 AND source.status = 'pending'
-            ORDER BY COALESCE(a.code, ''), COALESCE(a.name, ''), bt.imported_at DESC
-            "#,
-            bank_txn_id,
-            user_id
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(rows
-            .into_iter()
-            .map(|row| BankTransactionPrefill {
-                bank_transaction_id: row.id,
-                date: row.date,
-                amount: row.amount,
-                description: row.description,
-                reference: row.reference,
-                internal_account_id: row.internal_account_id,
-                internal_account_name: row.internal_account_name,
-                currency: row.currency,
-            })
-            .collect());
+        return Ok(storage
+            .bank_transactions
+            .list_transfer_matches(user_id, bank_txn_id)
+            .await?);
     }
 
     #[allow(unreachable_code)]

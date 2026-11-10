@@ -7,8 +7,6 @@ use crate::{
 };
 use dioxus::prelude::*;
 use rust_decimal::Decimal;
-#[cfg(feature = "server")]
-use sqlx::Row;
 use uuid::Uuid;
 
 #[get("/api/bank-accounts/:id")]
@@ -17,51 +15,14 @@ pub async fn get_bank_account_detail(id: Uuid) -> Result<BankAccountSummary, Ser
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let row = sqlx::query!(
-            r#"
-            SELECT
-                ba.id,
-                ba.name,
-                ba.iban,
-                ba.currency,
-                ba.internal_account_id AS "internal_account_id?: Uuid",
-                ba.is_manual,
-                a.name AS "internal_account_name?",
-                bc.aspsp_name,
-                bc.aspsp_country,
-                bc.provider_id AS "provider_id?: String",
-                bc.access_valid_until,
-                ba.last_synced_at
-            FROM bank_accounts ba
-            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
-            LEFT JOIN accounts a ON a.id = ba.internal_account_id
-            WHERE ba.id = $1 AND ba.user_id = $2
-            "#,
-            id,
-            user_id
-        )
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
-
-        return Ok(BankAccountSummary {
-            id: row.id,
-            name: row.name,
-            iban: row.iban,
-            currency: row.currency,
-            internal_account_id: row.internal_account_id,
-            internal_account_name: row.internal_account_name,
-            aspsp_name: row.aspsp_name,
-            aspsp_country: row.aspsp_country,
-            provider_id: row.provider_id,
-            access_valid_until: row.access_valid_until,
-            last_synced_at: row.last_synced_at,
-            is_manual: row.is_manual,
-        });
+        return storage
+            .bank_accounts
+            .find_summary(user_id, id)
+            .await?
+            .ok_or_else(|| ServerFnError::new("Bank account not found"));
     }
 
     #[allow(unreachable_code)]
@@ -76,62 +37,27 @@ pub async fn get_bank_account_balance(
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        crate::server::bank_sync_cache::maybe_lazy_sync_for_user(&pool, user_id, id)
+        crate::server::bank_sync_cache::maybe_lazy_sync_for_user(&storage, user_id, id)
             .await
             .map_err(ServerFnError::new)?;
 
-        // Load account and connection.
-        let record = sqlx::query(
-            r#"
-            SELECT
-                ba.internal_account_id,
-                ba.is_manual,
-                ba.balance,
-                ba.currency
-            FROM bank_accounts ba
-            WHERE ba.id = $1 AND ba.user_id = $2
-            "#,
-        )
-        .bind(id)
-        .bind(user_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
+        let account = storage
+            .bank_accounts
+            .find(user_id, id)
+            .await?
+            .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
-        // Compute internal balance: debit_sum - credit_sum of all journal entries
-        // for the linked internal account. Zero if no account is linked.
-        let internal_account_id: Option<Uuid> = record.get("internal_account_id");
-        let is_manual: bool = record.get("is_manual");
-
-        let internal_balance = if let Some(account_id) = internal_account_id {
-            let bal_row = sqlx::query!(
-                r#"
-                SELECT
-                    COALESCE(SUM(CASE WHEN je.entry_type = 'Debit' THEN je.amount ELSE 0::numeric END), 0::numeric)
-                        AS "debit_sum!: rust_decimal::Decimal",
-                    COALESCE(SUM(CASE WHEN je.entry_type = 'Credit' THEN je.amount ELSE 0::numeric END), 0::numeric)
-                        AS "credit_sum!: rust_decimal::Decimal"
-                FROM journal_entries je
-                JOIN transactions t ON t.id = je.transaction_id
-                WHERE je.account_id = $1 AND t.user_id = $2
-                "#,
-                account_id,
-                user_id
-            )
-            .fetch_one(&pool)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-            bal_row.debit_sum - bal_row.credit_sum
-        } else {
-            Decimal::ZERO
+        // Zero if no ledger account is linked.
+        let internal_balance = match account.internal_account_id {
+            Some(account_id) => storage.accounts.balance(user_id, account_id).await?,
+            None => Decimal::ZERO,
         };
 
         // Manual accounts have no live balance from a provider.
-        if is_manual {
+        if account.is_manual {
             return Ok(BankAccountBalanceComparison {
                 bank_account_id: id,
                 internal_balance,
@@ -141,12 +67,10 @@ pub async fn get_bank_account_balance(
             });
         }
 
-        let bank_balance_amount: Option<Decimal> = record.get("balance");
-        let bank_balance_currency =
-            bank_balance_amount.map(|_| record.get::<String, _>("currency"));
+        let bank_balance_currency = account.balance.map(|_| account.currency);
 
         // Only show a difference when we have both sides.
-        let difference = match (bank_balance_amount, internal_account_id) {
+        let difference = match (account.balance, account.internal_account_id) {
             (Some(bank), Some(_)) => Some(bank - internal_balance),
             _ => None,
         };
@@ -154,7 +78,7 @@ pub async fn get_bank_account_balance(
         return Ok(BankAccountBalanceComparison {
             bank_account_id: id,
             internal_balance,
-            bank_balance: bank_balance_amount,
+            bank_balance: account.balance,
             bank_balance_currency,
             difference,
         });
@@ -170,32 +94,14 @@ pub async fn list_bank_transactions(id: Uuid) -> Result<Vec<BankTransaction>, Se
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        crate::server::bank_sync_cache::maybe_lazy_sync_for_user(&pool, user_id, id)
+        crate::server::bank_sync_cache::maybe_lazy_sync_for_user(&storage, user_id, id)
             .await
             .map_err(ServerFnError::new)?;
 
-        let rows = sqlx::query_as!(
-            BankTransaction,
-            r#"
-            SELECT
-                id, bank_account_id, user_id, external_id,
-                date, amount, currency, description, reference,
-                status, linked_journal_entry_id, imported_at
-            FROM bank_transactions
-            WHERE bank_account_id = $1 AND user_id = $2 AND status = 'pending'
-            ORDER BY date DESC, imported_at DESC
-            "#,
-            id,
-            user_id
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(rows);
+        return Ok(storage.bank_transactions.list_pending(user_id, id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -210,52 +116,14 @@ pub async fn list_all_bank_transactions(
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        crate::server::bank_sync_cache::maybe_lazy_sync_for_user(&pool, user_id, id)
+        crate::server::bank_sync_cache::maybe_lazy_sync_for_user(&storage, user_id, id)
             .await
             .map_err(ServerFnError::new)?;
 
-        let rows = sqlx::query!(
-            r#"
-            SELECT
-                bt.id        AS "id: Uuid",
-                bt.date,
-                bt.amount    AS "amount: rust_decimal::Decimal",
-                bt.currency,
-                bt.description,
-                bt.reference,
-                bt.status,
-                bt.imported_at AS "imported_at: chrono::DateTime<chrono::Utc>",
-                t.id         AS "linked_transaction_id?: Uuid"
-            FROM bank_transactions bt
-            LEFT JOIN journal_entries je ON je.id = bt.linked_journal_entry_id
-            LEFT JOIN transactions    t  ON t.id  = je.transaction_id
-            WHERE bt.bank_account_id = $1 AND bt.user_id = $2
-            ORDER BY bt.date DESC, bt.imported_at DESC
-            "#,
-            id,
-            user_id
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(rows
-            .into_iter()
-            .map(|row| BankTransactionOverview {
-                id: row.id,
-                date: row.date,
-                amount: row.amount,
-                currency: row.currency,
-                description: row.description,
-                reference: row.reference,
-                status: row.status,
-                linked_transaction_id: row.linked_transaction_id,
-                imported_at: row.imported_at,
-            })
-            .collect());
+        return Ok(storage.bank_transactions.list_overview(user_id, id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -268,20 +136,10 @@ pub async fn restore_bank_transaction(id: Uuid) -> Result<(), ServerFnError> {
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let result = sqlx::query!(
-            "UPDATE bank_transactions SET status = 'pending'
-             WHERE id = $1 AND user_id = $2 AND status = 'dismissed'",
-            id,
-            user_id
-        )
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        if result.rows_affected() == 0 {
+        if !storage.bank_transactions.restore(user_id, id).await? {
             return Err(ServerFnError::new(
                 "Transaction not found or not in dismissed state",
             ));
@@ -301,37 +159,35 @@ pub async fn create_manual_bank_transaction(
 ) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::server::auth::{extract_context, require_auth};
+        use crate::{
+            server::auth::{extract_context, require_auth},
+            storage::bank_transactions::NewBankTransaction,
+        };
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let _account = sqlx::query_scalar!(
-            "SELECT id FROM bank_accounts WHERE id = $1 AND user_id = $2",
-            id,
-            user_id
-        )
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
+        storage
+            .bank_accounts
+            .find(user_id, id)
+            .await?
+            .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
-        sqlx::query!(
-            r#"INSERT INTO bank_transactions
-               (bank_account_id, user_id, external_id, date, amount, currency, description, reference, status, imported_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW())"#,
-            id,
-            user_id,
-            format!("manual-{}", Uuid::new_v4()),
-            date,
-            amount,
-            "EUR",
-            description,
-            reference,
-        )
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        storage
+            .bank_transactions
+            .create(
+                user_id,
+                id,
+                NewBankTransaction {
+                    external_id: format!("manual-{}", Uuid::new_v4()),
+                    date,
+                    amount,
+                    currency: "EUR".to_string(),
+                    description,
+                    reference,
+                },
+            )
+            .await?;
     }
 
     Ok(())
@@ -343,20 +199,10 @@ pub async fn dismiss_bank_transaction(id: Uuid) -> Result<(), ServerFnError> {
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let result = sqlx::query!(
-            "UPDATE bank_transactions SET status = 'dismissed'
-             WHERE id = $1 AND user_id = $2 AND status = 'pending'",
-            id,
-            user_id
-        )
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        if result.rows_affected() == 0 {
+        if !storage.bank_transactions.dismiss(user_id, id).await? {
             return Err(ServerFnError::new(
                 "Transaction not found or already processed",
             ));
@@ -381,64 +227,39 @@ pub async fn disconnect_bank_account(id: Uuid) -> Result<(), ServerFnError> {
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let record = sqlx::query!(
-            r#"SELECT ba.bank_connection_id, ba.is_manual, bc.provider_id, bc.provider_session_id
-            FROM bank_accounts ba
-            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
-            WHERE ba.id = $1 AND ba.user_id = $2"#,
-            id,
-            user_id
-        )
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
+        let account = storage
+            .bank_accounts
+            .find_syncable(id, Some(user_id))
+            .await?
+            .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
-        if record.is_manual {
+        if account.is_manual {
             return Err(ServerFnError::new("This bank account is already manual"));
         }
 
-        sqlx::query(
-            r#"UPDATE bank_accounts
-            SET bank_connection_id = NULL,
-                provider_account_uid = NULL,
-                is_manual = TRUE,
-                last_synced_at = NULL,
-                balance = NULL
-            WHERE id = $1 AND user_id = $2"#,
-        )
-        .bind(id)
-        .bind(user_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        storage
+            .bank_accounts
+            .disconnect_from_provider(user_id, id)
+            .await?;
 
-        if let Some(connection_id) = record.bank_connection_id {
-            let remaining = sqlx::query_scalar!(
-                "SELECT COUNT(*) FROM bank_accounts WHERE bank_connection_id = $1",
-                connection_id
-            )
-            .fetch_one(&pool)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?
-            .unwrap_or(0);
+        if let Some(session) = account.session {
+            let remaining = storage
+                .bank_accounts
+                .count_for_connection(session.connection_id)
+                .await?;
 
             if remaining == 0 {
-                if let Ok(provider) = crate::bank_sync::get_provider(&record.provider_id).await {
-                    let _ = provider.revoke_session(&record.provider_session_id).await;
+                if let Ok(provider) = crate::bank_sync::get_provider(&session.provider_id).await {
+                    let _ = provider.revoke_session(&session.provider_session_id).await;
                 }
 
-                sqlx::query!(
-                    "DELETE FROM bank_connections WHERE id = $1 AND user_id = $2",
-                    connection_id,
-                    user_id
-                )
-                .execute(&pool)
-                .await
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
+                storage
+                    .bank_connections
+                    .delete(user_id, session.connection_id)
+                    .await?;
             }
         }
     }
@@ -575,7 +396,9 @@ pub fn BankAccountDetail(id: Uuid) -> Element {
             new_date(),
             desc,
             amount,
-            Some(new_reference()).filter(|r| !r.trim().is_empty()).map(|r| r.trim().to_string()),
+            Some(new_reference())
+                .filter(|r| !r.trim().is_empty())
+                .map(|r| r.trim().to_string()),
         )
         .await
         {

@@ -12,83 +12,12 @@ use crate::models::{
 async fn list_transactions() -> Result<Vec<Transaction>, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::{
-            models::transaction::JournalEntry,
-            server::auth::{extract_context, require_auth},
-        };
-        use std::collections::HashMap;
+        use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let rows = sqlx::query!(
-            r#"
-            SELECT
-                t.id AS "transaction_id: Uuid",
-                t.date,
-                t.description,
-                t.reference,
-                t.user_id,
-                je.id AS "entry_id: Uuid",
-                je.account_id AS "account_id: Uuid",
-                a.name AS "account_name?",
-                a.code AS "account_code?",
-                je.entry_type AS "entry_type: EntryType",
-                je.amount AS "amount: Decimal",
-                je.memo
-            FROM transactions t
-            JOIN journal_entries je ON je.transaction_id = t.id
-            JOIN accounts a ON a.id = je.account_id
-            WHERE t.user_id = $1
-            ORDER BY t.date DESC, t.id, je.entry_type
-            "#,
-            user_id
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        let mut txn_map: HashMap<Uuid, Transaction> = HashMap::new();
-        let mut txn_order: Vec<Uuid> = Vec::new();
-
-        for row in rows {
-            let tid = row.transaction_id;
-            let entry = JournalEntry {
-                id: row.entry_id,
-                transaction_id: tid,
-                account_id: row.account_id,
-                account_name: row.account_name,
-                account_code: row.account_code,
-                entry_type: row.entry_type,
-                amount: row.amount,
-                memo: row.memo,
-                bank_transaction_id: None,
-            };
-
-            if let Some(txn) = txn_map.get_mut(&tid) {
-                txn.entries.push(entry);
-            } else {
-                txn_order.push(tid);
-                txn_map.insert(
-                    tid,
-                    Transaction {
-                        id: tid,
-                        user_id: row.user_id,
-                        date: row.date,
-                        description: row.description,
-                        reference: row.reference,
-                        entries: vec![entry],
-                    },
-                );
-            }
-        }
-
-        let transactions = txn_order
-            .into_iter()
-            .filter_map(|id| txn_map.remove(&id))
-            .collect();
-
-        return Ok(transactions);
+        return Ok(storage.transactions.list(user_id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -99,30 +28,12 @@ async fn list_transactions() -> Result<Vec<Transaction>, ServerFnError> {
 pub async fn list_accounts_for_txn() -> Result<Vec<Account>, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::{
-            models::account::{AccountType, NormalBalance},
-            server::auth::{extract_context, require_auth},
-        };
+        use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let accounts = sqlx::query_as!(
-            Account,
-            r#"SELECT id, user_id, name, code,
-                account_type AS "account_type: AccountType",
-                normal_balance AS "normal_balance: NormalBalance",
-                description, is_active
-            FROM accounts
-            WHERE user_id = $1 AND is_active = TRUE
-            ORDER BY account_type, COALESCE(code, ''), name"#,
-            user_id
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(accounts);
+        return Ok(storage.accounts.list_active(user_id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -135,46 +46,12 @@ async fn delete_transaction(id: Uuid) -> Result<(), ServerFnError> {
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let mut tx = pool
-            .begin()
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        // Unlink any bank transactions attached to this transaction before the
-        // journal entries disappear, so they become visible again as pending.
-        sqlx::query!(
-            r#"UPDATE bank_transactions bt
-               SET status = 'pending', linked_journal_entry_id = NULL
-               FROM journal_entries je
-               WHERE je.transaction_id = $1
-                 AND je.bank_transaction_id = bt.id
-                 AND bt.user_id = $2"#,
-            id,
-            user_id
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        let result = sqlx::query!(
-            "DELETE FROM transactions WHERE id = $1 AND user_id = $2",
-            id,
-            user_id
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        if result.rows_affected() == 0 {
+        if !storage.transactions.delete(user_id, id).await? {
             return Err(ServerFnError::new("Transaction not found"));
         }
-
-        tx.commit()
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
     }
 
     Ok(())

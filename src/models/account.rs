@@ -2,12 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Standard chart-of-accounts categories for double-entry bookkeeping.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "server", derive(sqlx::Type))]
-#[cfg_attr(
-    feature = "server",
-    sqlx(type_name = "account_type", rename_all = "PascalCase")
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, strum::EnumString)]
 pub enum AccountType {
     Asset,
     Liability,
@@ -45,12 +40,7 @@ impl std::fmt::Display for AccountType {
 }
 
 /// Whether the account normally carries a debit or credit balance.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "server", derive(sqlx::Type))]
-#[cfg_attr(
-    feature = "server",
-    sqlx(type_name = "normal_balance", rename_all = "PascalCase")
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, strum::EnumString)]
 pub enum NormalBalance {
     Debit,
     Credit,
@@ -73,7 +63,6 @@ impl std::fmt::Display for NormalBalance {
 
 /// A chart-of-accounts entry belonging to a user.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "server", derive(sqlx::FromRow))]
 pub struct Account {
     pub id: Uuid,
     pub user_id: Uuid,

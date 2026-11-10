@@ -19,10 +19,8 @@ RUN rm src/main.rs
 
 COPY src ./src/
 COPY assets ./assets/
-COPY .sqlx ./.sqlx/
 COPY migrations ./migrations/
 
-ENV SQLX_OFFLINE=true
 RUN touch src/main.rs
 RUN cargo build --release --no-default-features --features server --offline
 
@@ -60,7 +58,6 @@ RUN rm src/main.rs
 
 COPY src ./src/
 COPY assets ./assets/
-COPY .sqlx ./.sqlx/
 COPY migrations ./migrations/
 
 RUN touch src/main.rs
