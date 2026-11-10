@@ -44,6 +44,8 @@ Set `DATABASE_URL` to use another SQLite file or a PostgreSQL database:
 
 For an absolute SQLite path, write three slashes: `sqlite:///var/lib/oxiledger/oxiledger.db`.
 
+SQLite keeps recent changes in `-wal` and `-shm` files next to the database file. To back up, stop OxiLedger and copy the whole folder.
+
 ### Bank sync
 
 Bank sync imports transactions and balances from users' banks through Enable Banking or GoCardless. Configure one or both, and set `BASE_URL` so banks can send users back to OxiLedger.
