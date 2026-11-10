@@ -19,8 +19,8 @@ pub async fn get_bank_account_detail(id: Uuid) -> Result<BankAccountSummary, Ser
         let user_id = require_auth(&storage, &cookies).await?;
 
         return storage
-            .bank_accounts
-            .find_summary(user_id, id)
+            .bank
+            .find_account_summary(user_id, id)
             .await?
             .ok_or_else(|| ServerFnError::new("Bank account not found"));
     }
@@ -45,14 +45,14 @@ pub async fn get_bank_account_balance(
             .map_err(ServerFnError::new)?;
 
         let account = storage
-            .bank_accounts
-            .find(user_id, id)
+            .bank
+            .find_account(user_id, id)
             .await?
             .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
         // Zero if no ledger account is linked.
         let internal_balance = match account.internal_account_id {
-            Some(account_id) => storage.accounts.balance(user_id, account_id).await?,
+            Some(account_id) => storage.ledger.account_balance(user_id, account_id).await?,
             None => Decimal::ZERO,
         };
 
@@ -101,7 +101,7 @@ pub async fn list_bank_transactions(id: Uuid) -> Result<Vec<BankTransaction>, Se
             .await
             .map_err(ServerFnError::new)?;
 
-        return Ok(storage.bank_transactions.list_pending(user_id, id).await?);
+        return Ok(storage.bank.list_pending_transactions(user_id, id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -123,7 +123,7 @@ pub async fn list_all_bank_transactions(
             .await
             .map_err(ServerFnError::new)?;
 
-        return Ok(storage.bank_transactions.list_overview(user_id, id).await?);
+        return Ok(storage.bank.list_transaction_overview(user_id, id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -139,7 +139,7 @@ pub async fn restore_bank_transaction(id: Uuid) -> Result<(), ServerFnError> {
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        if !storage.bank_transactions.restore(user_id, id).await? {
+        if !storage.bank.restore_transaction(user_id, id).await? {
             return Err(ServerFnError::new(
                 "Transaction not found or not in dismissed state",
             ));
@@ -161,21 +161,21 @@ pub async fn create_manual_bank_transaction(
     {
         use crate::{
             server::auth::{extract_context, require_auth},
-            storage::bank_transactions::NewBankTransaction,
+            storage::bank::NewBankTransaction,
         };
 
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
         storage
-            .bank_accounts
-            .find(user_id, id)
+            .bank
+            .find_account(user_id, id)
             .await?
             .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
         storage
-            .bank_transactions
-            .create(
+            .bank
+            .create_transaction(
                 user_id,
                 id,
                 NewBankTransaction {
@@ -202,7 +202,7 @@ pub async fn dismiss_bank_transaction(id: Uuid) -> Result<(), ServerFnError> {
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        if !storage.bank_transactions.dismiss(user_id, id).await? {
+        if !storage.bank.dismiss_transaction(user_id, id).await? {
             return Err(ServerFnError::new(
                 "Transaction not found or already processed",
             ));
@@ -231,8 +231,8 @@ pub async fn disconnect_bank_account(id: Uuid) -> Result<(), ServerFnError> {
         let user_id = require_auth(&storage, &cookies).await?;
 
         let account = storage
-            .bank_accounts
-            .find_syncable(id, Some(user_id))
+            .bank
+            .find_syncable_account(id, Some(user_id))
             .await?
             .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
@@ -240,15 +240,12 @@ pub async fn disconnect_bank_account(id: Uuid) -> Result<(), ServerFnError> {
             return Err(ServerFnError::new("This bank account is already manual"));
         }
 
-        storage
-            .bank_accounts
-            .disconnect_from_provider(user_id, id)
-            .await?;
+        storage.bank.disconnect_account(user_id, id).await?;
 
         if let Some(session) = account.session {
             let remaining = storage
-                .bank_accounts
-                .count_for_connection(session.connection_id)
+                .bank
+                .count_connection_accounts(session.connection_id)
                 .await?;
 
             if remaining == 0 {
@@ -257,8 +254,8 @@ pub async fn disconnect_bank_account(id: Uuid) -> Result<(), ServerFnError> {
                 }
 
                 storage
-                    .bank_connections
-                    .delete(user_id, session.connection_id)
+                    .bank
+                    .delete_connection(user_id, session.connection_id)
                     .await?;
             }
         }

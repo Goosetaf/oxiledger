@@ -12,8 +12,8 @@ async fn get_bank_account_for_edit(id: Uuid) -> Result<BankAccountRecord, Server
         let user_id = require_auth(&storage, &cookies).await?;
 
         return storage
-            .bank_accounts
-            .find(user_id, id)
+            .bank
+            .find_account(user_id, id)
             .await?
             .ok_or_else(|| ServerFnError::new("Bank account not found"));
     }
@@ -34,7 +34,7 @@ async fn update_bank_account(
     {
         use crate::{
             server::auth::{extract_context, require_auth},
-            storage::bank_accounts::BankAccountDetails,
+            storage::bank::BankAccountDetails,
         };
 
         let (storage, cookies) = extract_context().await?;
@@ -61,7 +61,7 @@ async fn update_bank_account(
             internal_account_id,
         };
 
-        if !storage.bank_accounts.update(user_id, id, details).await? {
+        if !storage.bank.update_account(user_id, id, details).await? {
             return Err(ServerFnError::new("Bank account not found"));
         }
     }

@@ -17,7 +17,7 @@ async fn list_transactions() -> Result<Vec<Transaction>, ServerFnError> {
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        return Ok(storage.transactions.list(user_id).await?);
+        return Ok(storage.ledger.list_transactions(user_id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -33,7 +33,7 @@ pub async fn list_accounts_for_txn() -> Result<Vec<Account>, ServerFnError> {
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        return Ok(storage.accounts.list_active(user_id).await?);
+        return Ok(storage.ledger.list_active_accounts(user_id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -49,7 +49,7 @@ async fn delete_transaction(id: Uuid) -> Result<(), ServerFnError> {
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        if !storage.transactions.delete(user_id, id).await? {
+        if !storage.ledger.delete_transaction(user_id, id).await? {
             return Err(ServerFnError::new("Transaction not found"));
         }
     }

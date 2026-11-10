@@ -61,7 +61,7 @@ pub async fn start_bank_auth(
     {
         use crate::{
             server::auth::{extract_context, require_auth},
-            storage::bank_auth_states::BankAuthState,
+            storage::bank::BankAuthState,
         };
 
         let (storage, cookies) = extract_context().await?;
@@ -69,8 +69,8 @@ pub async fn start_bank_auth(
 
         if let Some(source_bank_account_id) = source_bank_account_id {
             let source = storage
-                .bank_accounts
-                .find(user_id, source_bank_account_id)
+                .bank
+                .find_account(user_id, source_bank_account_id)
                 .await?
                 .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
@@ -108,8 +108,8 @@ pub async fn start_bank_auth(
         };
 
         storage
-            .bank_auth_states
-            .create(BankAuthState {
+            .bank
+            .create_auth_state(BankAuthState {
                 user_id,
                 provider_id,
                 state,
@@ -140,8 +140,8 @@ async fn get_connection_source_bank_account_id(
         let user_id = require_auth(&storage, &cookies).await?;
 
         return Ok(storage
-            .bank_connections
-            .find(user_id, connection_id)
+            .bank
+            .find_connection(user_id, connection_id)
             .await?
             .and_then(|connection| connection.source_bank_account_id));
     }
@@ -156,7 +156,7 @@ async fn get_connection_source_bank_account_id(
 pub mod callback {
     use axum::response::{IntoResponse, Redirect, Response};
 
-    use crate::storage::{bank_connections::NewBankConnection, Storage};
+    use crate::storage::{bank::NewBankConnection, Storage};
 
     #[derive(serde::Deserialize)]
     pub struct BankCallbackParams {
@@ -203,13 +203,13 @@ pub mod callback {
                 None => return Redirect::temporary("/login").into_response(),
             };
 
-            match storage.sessions.find_active_user(&token).await {
+            match storage.users.find_session_user(&token).await {
                 Ok(Some(user_id)) => user_id,
                 _ => return Redirect::temporary("/login").into_response(),
             }
         };
 
-        let auth_state = match storage.bank_auth_states.consume(user_id, &state).await {
+        let auth_state = match storage.bank.consume_auth_state(user_id, &state).await {
             Ok(Some(auth_state)) => auth_state,
             Ok(None) => {
                 return Redirect::temporary(
@@ -284,7 +284,7 @@ pub mod callback {
             source_bank_account_id: auth_state.source_bank_account_id,
         };
 
-        let connection_id = match storage.bank_connections.create(connection).await {
+        let connection_id = match storage.bank.create_connection(connection).await {
             Ok(id) => id,
             Err(e) => {
                 eprintln!("[bank-sync] Failed to insert bank_connection: {e}");
@@ -315,8 +315,8 @@ pub async fn list_connection_accounts(
         let user_id = require_auth(&storage, &cookies).await?;
 
         return Ok(storage
-            .bank_accounts
-            .list_for_connection(user_id, connection_id)
+            .bank
+            .list_connection_accounts(user_id, connection_id)
             .await?);
     }
 
@@ -337,20 +337,20 @@ pub async fn map_bank_account(
     {
         use crate::{
             server::auth::{extract_context, require_auth},
-            storage::bank_accounts::ProviderAccount,
+            storage::bank::ProviderAccount,
         };
 
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
         storage
-            .bank_connections
-            .find(user_id, connection_id)
+            .bank
+            .find_connection(user_id, connection_id)
             .await?
             .ok_or_else(|| ServerFnError::new("Connection not found"))?;
 
         return Ok(storage
-            .bank_accounts
+            .bank
             .map_provider_account(
                 user_id,
                 connection_id,
@@ -382,15 +382,15 @@ pub async fn link_existing_bank_account(
     {
         use crate::{
             server::auth::{extract_context, require_auth},
-            storage::bank_accounts::ProviderAccount,
+            storage::bank::ProviderAccount,
         };
 
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
         let existing = storage
-            .bank_accounts
-            .find(user_id, bank_account_id)
+            .bank
+            .find_account(user_id, bank_account_id)
             .await?
             .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
@@ -401,8 +401,8 @@ pub async fn link_existing_bank_account(
         }
 
         let source_bank_account_id = storage
-            .bank_connections
-            .find(user_id, connection_id)
+            .bank
+            .find_connection(user_id, connection_id)
             .await?
             .and_then(|connection| connection.source_bank_account_id);
 
@@ -413,8 +413,8 @@ pub async fn link_existing_bank_account(
         }
 
         storage
-            .bank_accounts
-            .connect_to_provider(
+            .bank
+            .connect_account(
                 user_id,
                 bank_account_id,
                 connection_id,
@@ -1049,8 +1049,8 @@ async fn get_provider_accounts_for_connection(
         let user_id = require_auth(&storage, &cookies).await?;
 
         let accounts = storage
-            .bank_connections
-            .find(user_id, connection_id)
+            .bank
+            .find_connection(user_id, connection_id)
             .await?
             .ok_or_else(|| ServerFnError::new("Connection not found"))?
             .provider_accounts;
@@ -1061,7 +1061,7 @@ async fn get_provider_accounts_for_connection(
             Vec::new()
         } else {
             storage
-                .bank_accounts
+                .bank
                 .linked_provider_uids(user_id, uids, connection_id)
                 .await?
         };

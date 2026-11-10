@@ -11,7 +11,7 @@ use dioxus::prelude::*;
 use uuid::Uuid;
 
 #[cfg(feature = "server")]
-use crate::storage::{transactions::TransactionDraft, Storage, StorageError};
+use crate::storage::{ledger::TransactionDraft, Storage, StorageError};
 
 /// Checks what the transaction form sent and tidies it for storing. `current_transaction_id`
 /// is the transaction being edited, whose own bank transactions stay available to it.
@@ -103,8 +103,8 @@ async fn validate_linked_bank_transactions(
 
     let expected_count = bank_txn_ids.len();
     let rows = storage
-        .bank_transactions
-        .link_info(user_id, bank_txn_ids)
+        .bank
+        .transaction_link_info(user_id, bank_txn_ids)
         .await?;
 
     if rows.len() != expected_count {
@@ -203,8 +203,8 @@ pub async fn create_transaction(req: CreateTransactionRequest) -> Result<Uuid, S
         let draft = transaction_draft(&storage, req, user_id, None).await?;
 
         return storage
-            .transactions
-            .create(user_id, draft)
+            .ledger
+            .create_transaction(user_id, draft)
             .await
             .map_err(transaction_save_error);
     }
@@ -227,7 +227,7 @@ pub async fn get_bank_transaction_prefill(
         let user_id = require_auth(&storage, &cookies).await?;
 
         return storage
-            .bank_transactions
+            .bank
             .find_pending_prefill(user_id, bank_txn_id)
             .await?
             .ok_or_else(|| {
@@ -253,10 +253,7 @@ pub async fn list_pending_bank_transaction_prefills(
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        return Ok(storage
-            .bank_transactions
-            .list_pending_prefills(user_id, date)
-            .await?);
+        return Ok(storage.bank.list_pending_prefills(user_id, date).await?);
     }
 
     #[allow(unreachable_code)]
@@ -275,7 +272,7 @@ pub async fn suggest_transfer_matches(
         let user_id = require_auth(&storage, &cookies).await?;
 
         return Ok(storage
-            .bank_transactions
+            .bank
             .list_transfer_matches(user_id, bank_txn_id)
             .await?);
     }

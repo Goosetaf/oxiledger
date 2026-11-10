@@ -10,4 +10,4 @@ Default to no comments. Only write comments if the behaviour cannot be understoo
 
 ## Storage
 
-Data access goes through the repository traits in `src/storage`. Only `src/storage/diesel_store` may use Diesel; server functions, handlers and models must not. Both SQLite and Postgres are supported, so a schema change needs a migration in `migrations/sqlite` and in `migrations/postgres`, and the storage tests should pass against both (see the README).
+Data access goes through the repository traits in `src/storage`. Repositories are grouped by topic (`users`, `ledger`, `bank`), not one per table; add to the one that fits before creating another. Only `src/storage/diesel_store` may use Diesel; server functions, handlers and models must not. Both SQLite and Postgres are supported, so a schema change needs a migration in `migrations/sqlite` and in `migrations/postgres`, and the storage tests should pass against both (see the README).

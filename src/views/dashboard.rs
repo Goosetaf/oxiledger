@@ -11,7 +11,7 @@ async fn get_account_balances() -> Result<Vec<AccountBalance>, ServerFnError> {
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        return Ok(storage.accounts.balances(user_id).await?);
+        return Ok(storage.ledger.account_balances(user_id).await?);
     }
 
     #[allow(unreachable_code)]

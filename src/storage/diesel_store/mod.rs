@@ -1,17 +1,11 @@
 //! Repositories backed by Diesel, for SQLite and Postgres alike. Nothing outside this module
 //! may depend on Diesel.
 
-mod accounts;
-mod bank_accounts;
-mod bank_auth_states;
-mod bank_connections;
-mod bank_transactions;
+mod bank;
 mod connection;
+mod ledger;
 mod migrations;
-mod oidc_states;
 mod schema;
-mod sessions;
-mod transactions;
 mod types;
 mod users;
 
@@ -42,14 +36,8 @@ pub async fn connect(database_url: &str) -> StorageResult<Storage> {
 
     Ok(Storage {
         users: Arc::new(users::UserStore::new(db.clone())),
-        sessions: Arc::new(sessions::SessionStore::new(db.clone())),
-        oidc_states: Arc::new(oidc_states::OidcStateStore::new(db.clone())),
-        accounts: Arc::new(accounts::AccountStore::new(db.clone())),
-        transactions: Arc::new(transactions::TransactionStore::new(db.clone())),
-        bank_accounts: Arc::new(bank_accounts::BankAccountStore::new(db.clone())),
-        bank_connections: Arc::new(bank_connections::BankConnectionStore::new(db.clone())),
-        bank_auth_states: Arc::new(bank_auth_states::BankAuthStateStore::new(db.clone())),
-        bank_transactions: Arc::new(bank_transactions::BankTransactionStore::new(db)),
+        ledger: Arc::new(ledger::LedgerStore::new(db.clone())),
+        bank: Arc::new(bank::BankStore::new(db)),
     })
 }
 

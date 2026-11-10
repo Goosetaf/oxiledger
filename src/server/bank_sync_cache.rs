@@ -14,7 +14,10 @@ use uuid::Uuid;
 use crate::{
     bank_sync::provider::{AspspInfo, ProviderBalance},
     models::bank_sync::SyncResult,
-    storage::{bank_accounts::SyncableBankAccount, bank_transactions::NewBankTransaction, Storage},
+    storage::{
+        bank::{NewBankTransaction, SyncableBankAccount},
+        Storage,
+    },
 };
 use dioxus::prelude::ServerFnError;
 
@@ -289,7 +292,7 @@ async fn sync_stale_accounts(storage: &Storage) -> Result<(), String> {
     }
 
     let candidates = storage
-        .bank_accounts
+        .bank
         .list_sync_candidates()
         .await
         .map_err(|err| err.to_string())?;
@@ -368,8 +371,8 @@ async fn sync_bank_account_record(
         .collect();
 
     storage
-        .bank_transactions
-        .import(record.user_id, record.id, transactions, balance)
+        .bank
+        .import_transactions(record.user_id, record.id, transactions, balance)
         .await
         .map_err(|err| err.to_string())
 }
@@ -380,8 +383,8 @@ async fn load_syncable_bank_account(
     user_id: Option<Uuid>,
 ) -> Result<Option<SyncableBankAccount>, String> {
     storage
-        .bank_accounts
-        .find_syncable(id, user_id)
+        .bank
+        .find_syncable_account(id, user_id)
         .await
         .map_err(|err| err.to_string())
 }

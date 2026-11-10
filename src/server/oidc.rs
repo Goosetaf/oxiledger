@@ -14,8 +14,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::storage::{
-    oidc_states::OidcState,
-    users::{NewUser, OidcIdentity},
+    users::{NewUser, OidcIdentity, OidcState},
     Storage, StorageResult,
 };
 
@@ -301,8 +300,8 @@ pub async fn handle_start(
     let expires_at = chrono::Utc::now() + chrono::Duration::minutes(10);
 
     let result = storage
-        .oidc_states
-        .create(OidcState {
+        .users
+        .create_oidc_state(OidcState {
             provider_id: provider_id.clone(),
             csrf_token: csrf_token.secret().clone(),
             pkce_verifier: pkce_verifier.secret().clone(),
@@ -349,7 +348,7 @@ pub async fn handle_callback(
     };
 
     // 1. Look up + consume the state row (validates CSRF + retrieves PKCE verifier).
-    let state_row = storage.oidc_states.consume(&params.state).await;
+    let state_row = storage.users.consume_oidc_state(&params.state).await;
 
     let state_row = match state_row {
         Ok(Some(r)) => r,

@@ -20,7 +20,7 @@ async fn list_accounts_for_edit() -> Result<Vec<Account>, ServerFnError> {
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        let mut accounts = storage.accounts.list(user_id).await?;
+        let mut accounts = storage.ledger.list_accounts(user_id).await?;
         // Active accounts first, each group keeping the list's own order.
         accounts.sort_by_key(|account| !account.is_active);
 
@@ -41,8 +41,8 @@ async fn get_transaction(id: Uuid) -> Result<Transaction, ServerFnError> {
         let user_id = require_auth(&storage, &cookies).await?;
 
         return storage
-            .transactions
-            .find(user_id, id)
+            .ledger
+            .find_transaction(user_id, id)
             .await?
             .ok_or_else(|| ServerFnError::new("Transaction not found"));
     }
@@ -66,8 +66,8 @@ async fn update_transaction(id: Uuid, req: CreateTransactionRequest) -> Result<(
         let draft = transaction_draft(&storage, req, user_id, Some(id)).await?;
 
         let updated = storage
-            .transactions
-            .update(user_id, id, draft)
+            .ledger
+            .update_transaction(user_id, id, draft)
             .await
             .map_err(transaction_save_error)?;
 

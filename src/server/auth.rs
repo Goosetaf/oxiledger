@@ -36,14 +36,17 @@ pub async fn create_session(storage: &Storage, user_id: Uuid) -> StorageResult<S
     let token = Uuid::new_v4().to_string();
     let expires_at = chrono::Utc::now() + chrono::Duration::days(SESSION_DURATION_DAYS);
 
-    storage.sessions.create(user_id, &token, expires_at).await?;
+    storage
+        .users
+        .create_session(user_id, &token, expires_at)
+        .await?;
 
     Ok(token)
 }
 
 /// Delete a session by its token (logout).
 pub async fn delete_session(storage: &Storage, token: &str) -> StorageResult<()> {
-    storage.sessions.delete(token).await
+    storage.users.delete_session(token).await
 }
 
 pub async fn needs_setup(storage: &Storage) -> StorageResult<bool> {
@@ -64,8 +67,8 @@ pub async fn require_auth(storage: &Storage, cookies: &Cookies) -> Result<Uuid, 
         })?;
 
     storage
-        .sessions
-        .find_active_user(&token)
+        .users
+        .find_session_user(&token)
         .await?
         .ok_or_else(|| {
             ServerFnError::from(HttpError::new(

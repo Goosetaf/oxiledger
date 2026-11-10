@@ -1,16 +1,10 @@
 //! The persistence boundary. Application code depends on the repository traits defined here,
-//! never on the database library behind them.
+//! never on the database library behind them. There is one repository per topic.
 
-pub mod accounts;
-pub mod bank_accounts;
-pub mod bank_auth_states;
-pub mod bank_connections;
-pub mod bank_transactions;
+pub mod bank;
 mod diesel_store;
 mod error;
-pub mod oidc_states;
-pub mod sessions;
-pub mod transactions;
+pub mod ledger;
 pub mod users;
 
 use std::sync::Arc;
@@ -22,14 +16,8 @@ pub const DEFAULT_DATABASE_URL: &str = "sqlite://data/oxiledger.db";
 #[derive(Clone)]
 pub struct Storage {
     pub users: Arc<dyn users::UserRepository>,
-    pub sessions: Arc<dyn sessions::SessionRepository>,
-    pub oidc_states: Arc<dyn oidc_states::OidcStateRepository>,
-    pub accounts: Arc<dyn accounts::AccountRepository>,
-    pub transactions: Arc<dyn transactions::TransactionRepository>,
-    pub bank_accounts: Arc<dyn bank_accounts::BankAccountRepository>,
-    pub bank_connections: Arc<dyn bank_connections::BankConnectionRepository>,
-    pub bank_auth_states: Arc<dyn bank_auth_states::BankAuthStateRepository>,
-    pub bank_transactions: Arc<dyn bank_transactions::BankTransactionRepository>,
+    pub ledger: Arc<dyn ledger::LedgerRepository>,
+    pub bank: Arc<dyn bank::BankRepository>,
 }
 
 impl Storage {

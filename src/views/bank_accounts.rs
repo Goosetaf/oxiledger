@@ -14,7 +14,7 @@ pub async fn list_bank_accounts() -> Result<Vec<BankAccountSummary>, ServerFnErr
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        return Ok(storage.bank_accounts.list(user_id).await?);
+        return Ok(storage.bank.list_accounts(user_id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -56,7 +56,7 @@ pub async fn delete_bank_account(id: Uuid) -> Result<(), ServerFnError> {
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        if !storage.bank_accounts.delete(user_id, id).await? {
+        if !storage.bank.delete_account(user_id, id).await? {
             return Err(ServerFnError::new("Bank account not found"));
         }
     }

@@ -100,7 +100,7 @@ dx serve --platform desktop
 
 ## Database layer
 
-The application reads and writes data through the repository traits in `src/storage`, one per kind of data. `src/storage/diesel_store` implements them with [Diesel](https://diesel.rs/) for both SQLite and PostgreSQL, and is the only code that may use Diesel.
+The application reads and writes data through the repository traits in `src/storage`. There is one per topic: `users` (accounts, sessions and sign-in), `ledger` (the chart of accounts and transactions) and `bank` (bank accounts, connections and imported transactions). `src/storage/diesel_store` implements them with [Diesel](https://diesel.rs/) for both SQLite and PostgreSQL, and is the only code that may use Diesel.
 
 Each database has its own migrations, in `migrations/sqlite` and `migrations/postgres`. They are built into the server and run when it starts. A schema change needs a migration in both folders, with the same name, and a matching change to `src/storage/diesel_store/schema.rs`.
 

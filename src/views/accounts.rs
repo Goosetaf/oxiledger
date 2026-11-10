@@ -13,7 +13,7 @@ async fn list_accounts() -> Result<Vec<Account>, ServerFnError> {
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        return Ok(storage.accounts.list(user_id).await?);
+        return Ok(storage.ledger.list_accounts(user_id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -29,7 +29,10 @@ async fn toggle_account(account_id: Uuid) -> Result<(), ServerFnError> {
         let (storage, cookies) = extract_context().await?;
         let user_id = require_auth(&storage, &cookies).await?;
 
-        storage.accounts.toggle_active(user_id, account_id).await?;
+        storage
+            .ledger
+            .toggle_account_active(user_id, account_id)
+            .await?;
     }
 
     Ok(())
@@ -48,8 +51,8 @@ async fn delete_account(id: Uuid) -> Result<(), ServerFnError> {
         let user_id = require_auth(&storage, &cookies).await?;
 
         let deleted = storage
-            .accounts
-            .delete(user_id, id)
+            .ledger
+            .delete_account(user_id, id)
             .await
             .map_err(|e| match e {
                 StorageError::ForeignKeyViolation(_) => ServerFnError::new(
