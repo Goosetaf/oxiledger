@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use diesel::prelude::*;
 use uuid::Uuid;
 
-use super::connection::DbConnection;
+use super::connection::{write_transaction, DbConnection};
 use super::schema::{accounts, bank_accounts, bank_connections};
 use super::types::{Id, Money, Timestamp};
 use crate::models::bank_sync::{BankAccountRecord, BankAccountSummary};
@@ -10,7 +10,7 @@ use crate::storage::bank_accounts::{
     BankAccountDetails, BankAccountRepository, ProviderAccount, ProviderSession, SyncCandidate,
     SyncableBankAccount,
 };
-use crate::storage::StorageResult;
+use crate::storage::{StorageError, StorageResult};
 
 super::store!(BankAccountStore);
 
@@ -165,6 +165,54 @@ fn load_summaries(
         .collect())
 }
 
+fn save_provider_account(
+    conn: &mut DbConnection,
+    user_id: Uuid,
+    connection_id: Uuid,
+    account: &ProviderAccount,
+    internal_account_id: Option<Uuid>,
+) -> StorageResult<Uuid> {
+    let existing = bank_accounts::table
+        .filter(bank_accounts::bank_connection_id.eq(Id(connection_id)))
+        .filter(bank_accounts::provider_account_uid.eq(&account.uid))
+        .select(bank_accounts::id)
+        .first::<Id>(conn)
+        .optional()?;
+
+    if let Some(id) = existing {
+        diesel::update(bank_accounts::table.find(id))
+            .set((
+                bank_accounts::internal_account_id.eq(internal_account_id.map(Id)),
+                bank_accounts::iban.eq(&account.iban),
+                bank_accounts::name.eq(&account.name),
+                bank_accounts::currency.eq(&account.currency),
+                bank_accounts::is_manual.eq(false),
+                bank_accounts::last_synced_at.eq(None::<Timestamp>),
+                bank_accounts::balance.eq(None::<Money>),
+            ))
+            .execute(conn)?;
+        return Ok(id.0);
+    }
+
+    let row = NewBankAccountRow {
+        id: Id::new(),
+        user_id: Id(user_id),
+        bank_connection_id: Some(Id(connection_id)),
+        internal_account_id: internal_account_id.map(Id),
+        provider_account_uid: Some(account.uid.clone()),
+        iban: account.iban.clone(),
+        name: account.name.clone(),
+        currency: account.currency.clone(),
+        is_manual: false,
+        created_at: Timestamp::now(),
+    };
+
+    diesel::insert_into(bank_accounts::table)
+        .values(&row)
+        .execute(conn)?;
+    Ok(row.id.0)
+}
+
 #[async_trait]
 impl BankAccountRepository for BankAccountStore {
     async fn list(&self, user_id: Uuid) -> StorageResult<Vec<BankAccountSummary>> {
@@ -300,46 +348,25 @@ impl BankAccountRepository for BankAccountStore {
         internal_account_id: Option<Uuid>,
     ) -> StorageResult<Uuid> {
         self.db
-            .transaction(move |conn| {
-                let existing = bank_accounts::table
-                    .filter(bank_accounts::bank_connection_id.eq(Id(connection_id)))
-                    .filter(bank_accounts::provider_account_uid.eq(&account.uid))
-                    .select(bank_accounts::id)
-                    .first::<Id>(conn)
-                    .optional()?;
-
-                if let Some(id) = existing {
-                    diesel::update(bank_accounts::table.find(id))
-                        .set((
-                            bank_accounts::internal_account_id.eq(internal_account_id.map(Id)),
-                            bank_accounts::iban.eq(account.iban),
-                            bank_accounts::name.eq(account.name),
-                            bank_accounts::currency.eq(account.currency),
-                            bank_accounts::is_manual.eq(false),
-                            bank_accounts::last_synced_at.eq(None::<Timestamp>),
-                            bank_accounts::balance.eq(None::<Money>),
-                        ))
-                        .execute(conn)?;
-                    return Ok(id.0);
-                }
-
-                let row = NewBankAccountRow {
-                    id: Id::new(),
-                    user_id: Id(user_id),
-                    bank_connection_id: Some(Id(connection_id)),
-                    internal_account_id: internal_account_id.map(Id),
-                    provider_account_uid: Some(account.uid),
-                    iban: account.iban,
-                    name: account.name,
-                    currency: account.currency,
-                    is_manual: false,
-                    created_at: Timestamp::now(),
+            .run(move |conn| {
+                let mut attempt = || {
+                    write_transaction(conn, |conn| {
+                        save_provider_account(
+                            conn,
+                            user_id,
+                            connection_id,
+                            &account,
+                            internal_account_id,
+                        )
+                    })
                 };
 
-                diesel::insert_into(bank_accounts::table)
-                    .values(&row)
-                    .execute(conn)?;
-                Ok(row.id.0)
+                match attempt() {
+                    // A request running at the same time added the account first, so it is
+                    // there to update now.
+                    Err(StorageError::UniqueViolation(_)) => attempt(),
+                    result => result,
+                }
             })
             .await
     }

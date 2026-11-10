@@ -1087,6 +1087,43 @@ async fn mapping_a_provider_account_twice_updates_the_same_bank_account() {
 }
 
 #[tokio::test]
+async fn mapping_the_same_provider_account_at_once_yields_one_bank_account() {
+    on_each_database(|storage| async move {
+        let id = user(&storage, "ada").await;
+        let connection_id = connection(&storage, id, None).await;
+
+        let attempts = (0..8).map(|_| {
+            let storage = storage.clone();
+            tokio::spawn(async move {
+                storage
+                    .bank_accounts
+                    .map_provider_account(id, connection_id, provider_account("uid-1", None), None)
+                    .await
+                    .unwrap()
+            })
+        });
+
+        let mut mapped = Vec::new();
+        for attempt in attempts.collect::<Vec<_>>() {
+            mapped.push(attempt.await.unwrap());
+        }
+
+        assert!(mapped
+            .iter()
+            .all(|bank_account_id| *bank_account_id == mapped[0]));
+        assert_eq!(
+            storage
+                .bank_accounts
+                .count_for_connection(connection_id)
+                .await
+                .unwrap(),
+            1
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_manual_bank_account_can_be_connected_and_disconnected() {
     on_each_database(|storage| async move {
         let id = user(&storage, "ada").await;

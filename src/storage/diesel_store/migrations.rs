@@ -23,10 +23,14 @@ pub fn run(conn: &mut DbConnection) -> StorageResult<()> {
             pg.batch_execute(&format!("SELECT pg_advisory_unlock({MIGRATION_LOCK})"))?;
             migrated
         }
-        DbConnection::Sqlite(sqlite) => sqlite
-            .run_pending_migrations(SQLITE)
-            .map(drop)
-            .map_err(failed),
+        // Holds the write lock from before the pending migrations are worked out, so an
+        // instance starting at the same time waits and then finds nothing left to run.
+        DbConnection::Sqlite(sqlite) => sqlite.immediate_transaction(|sqlite| {
+            sqlite
+                .run_pending_migrations(SQLITE)
+                .map(drop)
+                .map_err(failed)
+        }),
     }
 }
 
@@ -64,6 +68,22 @@ mod tests {
 
     use crate::storage::diesel_store::test_support;
     use crate::storage::Storage;
+
+    #[tokio::test]
+    async fn instances_starting_together_on_a_new_sqlite_file_all_start() {
+        let path = std::env::temp_dir().join(format!("oxiledger-test-{}.db", uuid::Uuid::new_v4()));
+        let url = format!("sqlite://{}", path.display());
+        let _cleanup = test_support::Cleanup::SqliteFile(path);
+
+        let starts = (0..6).map(|_| {
+            let url = url.clone();
+            tokio::spawn(async move { Storage::connect(&url).await })
+        });
+
+        for start in starts.collect::<Vec<_>>() {
+            start.await.unwrap().unwrap();
+        }
+    }
 
     #[tokio::test]
     async fn a_database_migrated_by_sqlx_keeps_its_data_and_is_not_migrated_again() {
