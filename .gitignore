@@ -10,3 +10,6 @@
 .direnv/
 
 .env
+
+# Local SQLite database
+/data/

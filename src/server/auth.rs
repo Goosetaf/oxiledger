@@ -5,9 +5,10 @@ use argon2::{
 // Note: we intentionally avoid using axum extractors here; read extensions
 // directly from `FullstackContext` to avoid axum_core version conflicts.
 use dioxus::prelude::{dioxus_fullstack::FullstackContext, HttpError, ServerFnError, StatusCode};
-use sqlx::PgPool;
 use tower_cookies::Cookies;
 use uuid::Uuid;
+
+use crate::storage::{Storage, StorageResult};
 
 pub const SESSION_COOKIE: &str = "session_token";
 /// Sessions expire after 30 days.
@@ -31,58 +32,30 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool, argon2::passw
 }
 
 /// Create a new session for the given user and return the session token.
-pub async fn create_session(pool: &PgPool, user_id: Uuid) -> Result<String, sqlx::Error> {
+pub async fn create_session(storage: &Storage, user_id: Uuid) -> StorageResult<String> {
     let token = Uuid::new_v4().to_string();
     let expires_at = chrono::Utc::now() + chrono::Duration::days(SESSION_DURATION_DAYS);
 
-    sqlx::query!(
-        "INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, $3)",
-        user_id,
-        token,
-        expires_at
-    )
-    .execute(pool)
-    .await?;
+    storage
+        .users
+        .create_session(user_id, &token, expires_at)
+        .await?;
 
     Ok(token)
 }
 
 /// Delete a session by its token (logout).
-pub async fn delete_session(pool: &PgPool, token: &str) -> Result<(), sqlx::Error> {
-    sqlx::query!("DELETE FROM sessions WHERE token = $1", token)
-        .execute(pool)
-        .await?;
-    Ok(())
+pub async fn delete_session(storage: &Storage, token: &str) -> StorageResult<()> {
+    storage.users.delete_session(token).await
 }
 
-pub async fn needs_setup(db: impl sqlx::PgExecutor<'_>) -> Result<bool, sqlx::Error> {
-    let has_users = sqlx::query_scalar!("SELECT EXISTS(SELECT 1 FROM users)")
-        .fetch_one(db)
-        .await?
-        .unwrap_or(false);
-    Ok(!has_users)
-}
-
-/// Begins creating the first user, or `None` if users exist. Blocks user inserts until it ends.
-pub async fn begin_setup(
-    pool: &PgPool,
-) -> Result<Option<sqlx::Transaction<'static, sqlx::Postgres>>, sqlx::Error> {
-    // Skips the lock once set up; the check under the lock is what makes setup safe.
-    if !needs_setup(pool).await? {
-        return Ok(None);
-    }
-
-    let mut tx = pool.begin().await?;
-    sqlx::query!("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
-        .execute(&mut *tx)
-        .await?;
-
-    Ok(needs_setup(&mut *tx).await?.then_some(tx))
+pub async fn needs_setup(storage: &Storage) -> StorageResult<bool> {
+    Ok(!storage.users.any_exist().await?)
 }
 
 /// Extract and validate the session cookie, returning the authenticated user_id.
 /// Returns `Err` with a suitable message if unauthenticated or the session has expired.
-pub async fn require_auth(pool: &PgPool, cookies: &Cookies) -> Result<Uuid, ServerFnError> {
+pub async fn require_auth(storage: &Storage, cookies: &Cookies) -> Result<Uuid, ServerFnError> {
     let token = cookies
         .get(SESSION_COOKIE)
         .map(|c| c.value().to_string())
@@ -93,42 +66,35 @@ pub async fn require_auth(pool: &PgPool, cookies: &Cookies) -> Result<Uuid, Serv
             ))
         })?;
 
-    let row = sqlx::query!(
-        "SELECT user_id FROM sessions WHERE token = $1 AND expires_at > NOW()",
-        token
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| ServerFnError::new(e.to_string()))?
-    .ok_or_else(|| {
-        ServerFnError::from(HttpError::new(
-            StatusCode::UNAUTHORIZED,
-            "Session expired or invalid",
-        ))
-    })?;
-
-    Ok(row.user_id)
+    storage
+        .users
+        .find_session_user(&token)
+        .await?
+        .ok_or_else(|| {
+            ServerFnError::from(HttpError::new(
+                StatusCode::UNAUTHORIZED,
+                "Session expired or invalid",
+            ))
+        })
 }
 
-/// Extract PgPool and session cookie value from the request context inside a server function.
-/// Returns `(pool, Option<session_token>)` where the session token is taken from the
-/// `Cookie` header if present.
-pub async fn extract_context() -> Result<(PgPool, Cookies), ServerFnError> {
+/// Extract the storage handle and cookies from the request context inside a server function.
+pub async fn extract_context() -> Result<(Storage, Cookies), ServerFnError> {
     // Prefer directly reading values from the FullstackContext to avoid
     // dealing with differing axum_core generic parameters across
     // dependency versions. This reads the request extensions that were
     // previously injected by middleware (eg. `CookieManagerLayer` and
-    // `Extension(pool)` in `main.rs`).
+    // `Extension(storage)` in `main.rs`).
     let ctx = FullstackContext::current()
         .ok_or_else(|| ServerFnError::new("No FullstackContext available"))?;
 
-    let pool = ctx
-        .extension::<PgPool>()
-        .ok_or_else(|| ServerFnError::new("Missing database pool extension"))?;
+    let storage = ctx
+        .extension::<Storage>()
+        .ok_or_else(|| ServerFnError::new("Missing storage extension"))?;
 
     let cookies = ctx.extension::<Cookies>().ok_or_else(|| {
         ServerFnError::new("Missing Cookies extension. Is CookieManagerLayer enabled?")
     })?;
 
-    Ok((pool, cookies))
+    Ok((storage, cookies))
 }

@@ -5,7 +5,42 @@ use crate::{
 use dioxus::prelude::*;
 
 #[cfg(feature = "server")]
-use crate::models::account::{AccountType, NormalBalance};
+use crate::storage::{ledger::AccountDraft, StorageError};
+
+/// Checks and tidies what the account form sent.
+#[cfg(feature = "server")]
+pub(crate) fn account_draft(req: CreateAccountRequest) -> Result<AccountDraft, ServerFnError> {
+    let name = req.name.trim();
+    if name.is_empty() {
+        return Err(ServerFnError::new("Account name cannot be empty"));
+    }
+
+    let non_empty = |value: Option<String>| {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+
+    Ok(AccountDraft {
+        name: name.to_string(),
+        code: non_empty(req.code),
+        account_type: req.account_type,
+        normal_balance: req.account_type.default_normal_balance(),
+        description: non_empty(req.description),
+    })
+}
+
+#[cfg(feature = "server")]
+pub(crate) fn account_save_error(err: StorageError) -> ServerFnError {
+    match err {
+        StorageError::UniqueViolation(_) => {
+            ServerFnError::new("An account with that code already exists")
+        }
+        other => other.into(),
+    }
+}
 
 #[post("/api/accounts")]
 pub async fn create_account(req: CreateAccountRequest) -> Result<Account, ServerFnError> {
@@ -13,45 +48,16 @@ pub async fn create_account(req: CreateAccountRequest) -> Result<Account, Server
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        if req.name.trim().is_empty() {
-            return Err(ServerFnError::new("Account name cannot be empty"));
-        }
+        let draft = account_draft(req)?;
 
-        let normal_balance = req.account_type.default_normal_balance();
-
-        let account = sqlx::query_as!(
-            Account,
-            r#"INSERT INTO accounts (user_id, name, code, account_type, normal_balance, description)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING
-                id, user_id, name, code,
-                account_type AS "account_type: AccountType",
-                normal_balance AS "normal_balance: NormalBalance",
-                description, is_active"#,
-            user_id,
-            req.name.trim(),
-            req.code.as_deref().map(str::trim).filter(|s| !s.is_empty()),
-            req.account_type as _,
-            normal_balance as _,
-            req.description
-                .as_deref()
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-        )
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("unique") {
-                ServerFnError::new("An account with that code already exists")
-            } else {
-                ServerFnError::new(e.to_string())
-            }
-        })?;
-
-        return Ok(account);
+        return storage
+            .ledger
+            .create_account(user_id, draft)
+            .await
+            .map_err(account_save_error);
     }
 
     #[allow(unreachable_code)]

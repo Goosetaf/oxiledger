@@ -12,7 +12,7 @@ OxiLedger uses environment variables for configuration. They are defined as foll
 
 | Variable                    | Description                                                                                               | Default                         |
 | --------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| `DATABASE_URL`              | The URL for the PostgreSQL database.                                                                      | _required_                      |
+| `DATABASE_URL`              | Where the data is stored: a SQLite file or a PostgreSQL database. See [Database](#database).              | `sqlite://data/oxiledger.db`    |
 | `OIDC_N_ISSUER`             | OIDC issuer URL for authentication.                                                                       | _null_                          |
 | `OIDC_N_CLIENT_ID`          | OIDC client ID for authentication.                                                                        | _null_                          |
 | `OIDC_N_CLIENT_SECRET`      | OIDC client secret for authentication.                                                                    | _null_                          |
@@ -30,6 +30,21 @@ Replace `N` in the OIDC variables with a number (e.g. `OIDC_1_ISSUER`) to config
 
 > [!NOTE]
 > On first start, a setup screen creates the first account, whatever the registration settings are.
+
+### Database
+
+OxiLedger stores its data in SQLite by default, in the file `data/oxiledger.db` under the working directory, which is `/app` in the Docker image. Mount a volume at `/app/data`, for example with `-v oxiledger-data:/app/data`, to keep the data when the container is replaced.
+
+Set `DATABASE_URL` to use another SQLite file or a PostgreSQL database:
+
+| Database   | `DATABASE_URL`                             |
+| ---------- | ------------------------------------------ |
+| SQLite     | `sqlite://path/to/oxiledger.db`            |
+| PostgreSQL | `postgres://user:password@host/database`   |
+
+For an absolute SQLite path, write three slashes: `sqlite:///var/lib/oxiledger/oxiledger.db`.
+
+SQLite keeps recent changes in `-wal` and `-shm` files next to the database file. To back up, stop OxiLedger and copy the whole folder.
 
 ### Bank sync
 
@@ -65,9 +80,9 @@ Uses a secret ID and key from [GoCardless Bank Account Data](https://developer.g
 
 # Development
 
-To get started, install Rust, dioxus-cli, and sqlx-cli. If you use Nix, the flake provides them.
+To get started, install Rust and dioxus-cli. If you use Nix, the flake provides them.
 
-To start a development database, you can run `docker compose up -d`, which matches the prefilled `.env.example`.
+Copy `.env.example` to `.env`. It stores data in a SQLite file under `data/`. To develop against PostgreSQL instead, run `docker compose up -d` and switch `DATABASE_URL` to the PostgreSQL line in `.env`.
 
 ## Serving
 
@@ -83,13 +98,24 @@ To run for a different platform, use the `--platform platform` flag. E.g.
 dx serve --platform desktop
 ```
 
-## Preparing Database Files
+## Database layer
 
-When building the Docker image, SQLx needs to run in offline mode. This requires prepared files, which can be generated with the following command:
+The application reads and writes data through the repository traits in `src/storage`. There is one per topic: `users` (accounts, sessions and sign-in), `ledger` (the chart of accounts and transactions) and `bank` (bank accounts, connections and imported transactions). `src/storage/diesel_store` implements them with [Diesel](https://diesel.rs/) for both SQLite and PostgreSQL, and is the only code that may use Diesel.
+
+Each database has its own migrations, in `migrations/sqlite` and `migrations/postgres`. They are built into the server and run when it starts. A schema change needs a migration in both folders, with the same name, and a matching change to `src/storage/diesel_store/schema.rs`.
+
+## Testing
 
 ```bash
-cargo sqlx prepare --workspace -- --features server
+cargo test --no-default-features --features server
 ```
+
+The storage tests run against SQLite. To run them against PostgreSQL as well, point `OXILEDGER_TEST_POSTGRES_URL` at a database, such as the one from `docker compose up -d`:
+
+```bash
+OXILEDGER_TEST_POSTGRES_URL=postgres://postgres:password@localhost/oxiledger cargo test --no-default-features --features server
+```
+
 
 # Contributing
 

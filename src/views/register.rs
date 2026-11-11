@@ -10,10 +10,10 @@ use tower_cookies::Cookie;
 async fn register_action(req: RegisterRequest) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::server::auth;
+        use crate::{server::auth, storage::users::NewUser};
         use std::sync::Arc;
 
-        let (pool, cookies) = auth::extract_context().await?;
+        let (storage, cookies) = auth::extract_context().await?;
 
         // Block registration when it's closed or password login is disabled.
         {
@@ -32,15 +32,7 @@ async fn register_action(req: RegisterRequest) -> Result<(), ServerFnError> {
             }
         }
 
-        let exists = sqlx::query_scalar!(
-            "SELECT EXISTS(SELECT 1 FROM users WHERE username = $1 OR email = $2)",
-            req.username,
-            req.email
-        )
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .unwrap_or(false);
+        let exists = storage.users.is_taken(&req.username, &req.email).await?;
 
         if exists {
             return Err(ServerFnError::new("Username or email is already taken"));
@@ -53,17 +45,17 @@ async fn register_action(req: RegisterRequest) -> Result<(), ServerFnError> {
         let hash =
             auth::hash_password(&req.password).map_err(|e| ServerFnError::new(e.to_string()))?;
 
-        let user_id = sqlx::query_scalar!(
-            "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id",
-            req.username,
-            req.email,
-            hash
-        )
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let user_id = storage
+            .users
+            .create(NewUser {
+                username: req.username,
+                email: req.email,
+                password_hash: Some(hash),
+                oidc: None,
+            })
+            .await?;
 
-        let token = auth::create_session(&pool, user_id)
+        let token = auth::create_session(&storage, user_id)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 

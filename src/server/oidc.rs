@@ -10,9 +10,13 @@ use openidconnect::{
     IdTokenFields, IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier,
     RedirectUrl, Scope, StandardErrorResponse, StandardTokenResponse, TokenResponse,
 };
-use sqlx::PgPool;
 use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::storage::{
+    users::{NewUser, OidcIdentity, OidcState},
+    Storage, StorageResult,
+};
 
 // ── Config types ─────────────────────────────────────────────────────────────
 
@@ -255,7 +259,7 @@ pub async fn load_config() -> OidcConfig {
 /// then redirects the browser to the provider's authorization endpoint.
 pub async fn handle_start(
     axum::extract::Path(provider_id): axum::extract::Path<String>,
-    axum::extract::Extension(pool): axum::extract::Extension<PgPool>,
+    axum::extract::Extension(storage): axum::extract::Extension<Storage>,
     axum::extract::Extension(config): axum::extract::Extension<Arc<OidcConfig>>,
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
@@ -295,17 +299,16 @@ pub async fn handle_start(
 
     let expires_at = chrono::Utc::now() + chrono::Duration::minutes(10);
 
-    let result = sqlx::query!(
-        "INSERT INTO oidc_states (provider_id, csrf_token, pkce_verifier, nonce, expires_at) \
-         VALUES ($1, $2, $3, $4, $5)",
-        provider_id,
-        csrf_token.secret(),
-        pkce_verifier.secret(),
-        nonce.secret(),
-        expires_at
-    )
-    .execute(&pool)
-    .await;
+    let result = storage
+        .users
+        .create_oidc_state(OidcState {
+            provider_id: provider_id.clone(),
+            csrf_token: csrf_token.secret().clone(),
+            pkce_verifier: pkce_verifier.secret().clone(),
+            nonce: nonce.secret().clone(),
+            expires_at,
+        })
+        .await;
 
     if let Err(e) = result {
         eprintln!("[oidc] Failed to store state for provider {provider_id}: {e}");
@@ -326,7 +329,7 @@ pub async fn handle_start(
 /// upserts the user row, creates a session, and redirects to `/`.
 pub async fn handle_callback(
     axum::extract::Query(params): axum::extract::Query<CallbackParams>,
-    axum::extract::Extension(pool): axum::extract::Extension<PgPool>,
+    axum::extract::Extension(storage): axum::extract::Extension<Storage>,
     axum::extract::Extension(config): axum::extract::Extension<Arc<OidcConfig>>,
     axum::extract::Extension(cookies): axum::extract::Extension<tower_cookies::Cookies>,
 ) -> axum::response::Response {
@@ -345,14 +348,7 @@ pub async fn handle_callback(
     };
 
     // 1. Look up + consume the state row (validates CSRF + retrieves PKCE verifier).
-    let state_row = sqlx::query!(
-        "DELETE FROM oidc_states \
-         WHERE csrf_token = $1 AND expires_at > NOW() \
-         RETURNING provider_id, pkce_verifier, nonce",
-        params.state
-    )
-    .fetch_optional(&pool)
-    .await;
+    let state_row = storage.users.consume_oidc_state(&params.state).await;
 
     let state_row = match state_row {
         Ok(Some(r)) => r,
@@ -444,7 +440,10 @@ pub async fn handle_callback(
 
     // 4. Extract identity claims.
     let subject = claims.subject().to_string();
-    let provider_id_str = provider.id.clone(); // e.g. "1"
+    let identity = OidcIdentity {
+        provider: provider.id.clone(), // e.g. "1"
+        subject: subject.clone(),
+    };
 
     let email = claims
         .email()
@@ -471,7 +470,7 @@ pub async fn handle_callback(
 
     // 6. Unless registration is open, require an existing account or an empty instance to set up.
     if !provider.allow_registration {
-        match has_account_or_set_up(&pool, &username, &email, &provider_id_str, &subject).await {
+        match has_account_or_set_up(&storage, &username, &email, &identity).await {
             Ok(true) => {}
             Ok(false) => {
                 return (
@@ -492,24 +491,11 @@ pub async fn handle_callback(
     }
 
     // 7. Upsert the user row.
-    //    On conflict (same provider + subject) we update the email so it stays fresh.
-    //    The UNIQUE constraint on (oidc_provider, oidc_subject) set in migration 0002
-    //    ensures we never create a duplicate identity.
-    let user_id: Uuid = match sqlx::query_scalar!(
-        r#"
-        INSERT INTO users (username, email, oidc_provider, oidc_subject)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (oidc_provider, oidc_subject)
-            DO UPDATE SET email = EXCLUDED.email, updated_at = NOW()
-        RETURNING id
-        "#,
-        username,
-        email,
-        provider_id_str,
-        subject
-    )
-    .fetch_one(&pool)
-    .await
+    //    For a known identity (same provider + subject) the email is updated so it stays fresh.
+    let user_id: Uuid = match storage
+        .users
+        .upsert_oidc(&username, &email, &identity)
+        .await
     {
         Ok(id) => id,
         Err(e) => {
@@ -517,21 +503,10 @@ pub async fn handle_callback(
             // Re-try with a suffixed username derived from the subject.
             eprintln!("[oidc] User upsert failed (possibly duplicate username): {e}");
             let fallback_username = format!("{username}_{}", &subject[..8.min(subject.len())]);
-            match sqlx::query_scalar!(
-                r#"
-                INSERT INTO users (username, email, oidc_provider, oidc_subject)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (oidc_provider, oidc_subject)
-                    DO UPDATE SET email = EXCLUDED.email, updated_at = NOW()
-                RETURNING id
-                "#,
-                fallback_username,
-                email,
-                provider_id_str,
-                subject
-            )
-            .fetch_one(&pool)
-            .await
+            match storage
+                .users
+                .upsert_oidc(&fallback_username, &email, &identity)
+                .await
             {
                 Ok(id) => id,
                 Err(e2) => {
@@ -547,7 +522,7 @@ pub async fn handle_callback(
     };
 
     // 8. Create a local session cookie (same mechanism as password login).
-    let token = match crate::server::auth::create_session(&pool, user_id).await {
+    let token = match crate::server::auth::create_session(&storage, user_id).await {
         Ok(t) => t,
         Err(e) => {
             eprintln!("[oidc] Session creation failed: {e}");
@@ -603,41 +578,26 @@ async fn user_groups(
 
 /// Whether the identity has an account, creating it as the first user on an empty instance.
 async fn has_account_or_set_up(
-    pool: &PgPool,
+    storage: &Storage,
     username: &str,
     email: &str,
-    provider_id: &str,
-    subject: &str,
-) -> Result<bool, sqlx::Error> {
-    let known = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE oidc_provider = $1 AND oidc_subject = $2)",
-        provider_id,
-        subject
-    )
-    .fetch_one(pool)
-    .await?
-    .unwrap_or(false);
-
-    if known {
+    identity: &OidcIdentity,
+) -> StorageResult<bool> {
+    if storage.users.has_oidc_identity(identity).await? {
         return Ok(true);
     }
 
-    let Some(mut tx) = crate::server::auth::begin_setup(pool).await? else {
-        return Ok(false);
-    };
+    let created = storage
+        .users
+        .create_first(NewUser {
+            username: username.to_string(),
+            email: email.to_string(),
+            password_hash: None,
+            oidc: Some(identity.clone()),
+        })
+        .await?;
 
-    sqlx::query!(
-        "INSERT INTO users (username, email, oidc_provider, oidc_subject) VALUES ($1, $2, $3, $4)",
-        username,
-        email,
-        provider_id,
-        subject
-    )
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-    Ok(true)
+    Ok(created.is_some())
 }
 
 /// Query parameters received on the OIDC callback URL.

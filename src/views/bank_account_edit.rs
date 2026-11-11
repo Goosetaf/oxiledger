@@ -8,23 +8,14 @@ async fn get_bank_account_for_edit(id: Uuid) -> Result<BankAccountRecord, Server
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let account = sqlx::query_as::<_, BankAccountRecord>(
-            r#"SELECT id, user_id, bank_connection_id, internal_account_id,
-                   provider_account_uid, iban, name, currency, balance, last_synced_at, created_at
-               FROM bank_accounts
-               WHERE id = $1 AND user_id = $2"#,
-        )
-        .bind(id)
-        .bind(user_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
-
-        return Ok(account);
+        return storage
+            .bank
+            .find_account(user_id, id)
+            .await?
+            .ok_or_else(|| ServerFnError::new("Bank account not found"));
     }
 
     #[allow(unreachable_code)]
@@ -41,10 +32,13 @@ async fn update_bank_account(
 ) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::server::auth::{extract_context, require_auth};
+        use crate::{
+            server::auth::{extract_context, require_auth},
+            storage::bank::BankAccountDetails,
+        };
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
         let trimmed_name = name.trim();
         if trimmed_name.is_empty() {
@@ -56,29 +50,18 @@ async fn update_bank_account(
             return Err(ServerFnError::new("Currency cannot be empty"));
         }
 
-        let result = sqlx::query(
-            r#"UPDATE bank_accounts
-               SET name = $3,
-                   iban = $4,
-                   currency = $5,
-                   internal_account_id = $6
-               WHERE id = $1 AND user_id = $2"#,
-        )
-        .bind(id)
-        .bind(user_id)
-        .bind(trimmed_name)
-        .bind(
-            iban.as_deref()
+        let details = BankAccountDetails {
+            name: trimmed_name.to_string(),
+            iban: iban
+                .as_deref()
                 .map(str::trim)
-                .filter(|value| !value.is_empty()),
-        )
-        .bind(trimmed_currency)
-        .bind(internal_account_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            currency: trimmed_currency,
+            internal_account_id,
+        };
 
-        if result.rows_affected() == 0 {
+        if !storage.bank.update_account(user_id, id, details).await? {
             return Err(ServerFnError::new("Bank account not found"));
         }
     }

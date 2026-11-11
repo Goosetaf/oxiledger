@@ -5,7 +5,6 @@ use uuid::Uuid;
 
 /// A bank connection record stored in `bank_connections`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "server", derive(sqlx::FromRow))]
 pub struct BankConnection {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -29,7 +28,6 @@ impl BankConnection {
 
 /// A bank account record stored in `bank_accounts`, joined with connection details.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "server", derive(sqlx::FromRow))]
 pub struct BankAccountRecord {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -42,6 +40,8 @@ pub struct BankAccountRecord {
     pub iban: Option<String>,
     pub name: Option<String>,
     pub currency: String,
+    /// `true` when the account is not connected to a provider.
+    pub is_manual: bool,
     pub balance: Option<Decimal>,
     pub last_synced_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -114,7 +114,6 @@ impl std::fmt::Display for BankTransactionStatus {
 
 /// An imported (staged) bank transaction stored in `bank_transactions`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "server", derive(sqlx::FromRow))]
 pub struct BankTransaction {
     pub id: Uuid,
     pub bank_account_id: Uuid,

@@ -5,9 +5,6 @@ use crate::{
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-#[cfg(feature = "server")]
-use sqlx::Row;
-
 #[get("/api/bank-sync/providers")]
 pub async fn list_bank_sync_providers() -> Result<Vec<String>, ServerFnError> {
     #[cfg(feature = "server")]
@@ -36,8 +33,8 @@ pub async fn list_aspsps(
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        require_auth(&storage, &cookies).await?;
 
         return crate::server::bank_sync_cache::list_aspsps_cached(
             &provider_id,
@@ -62,23 +59,22 @@ pub async fn start_bank_auth(
 ) -> Result<String, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::server::auth::{extract_context, require_auth};
+        use crate::{
+            server::auth::{extract_context, require_auth},
+            storage::bank::BankAuthState,
+        };
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
         if let Some(source_bank_account_id) = source_bank_account_id {
-            let is_manual = sqlx::query_scalar!(
-                "SELECT is_manual FROM bank_accounts WHERE id = $1 AND user_id = $2",
-                source_bank_account_id,
-                user_id
-            )
-            .fetch_optional(&pool)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?
-            .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
+            let source = storage
+                .bank
+                .find_account(user_id, source_bank_account_id)
+                .await?
+                .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
-            if !is_manual {
+            if !source.is_manual {
                 return Err(ServerFnError::new(
                     "Only manual bank accounts can be connected to a provider",
                 ));
@@ -111,22 +107,19 @@ pub async fn start_bank_auth(
             (None, auth_url)
         };
 
-        sqlx::query(
-            r#"INSERT INTO bank_auth_states
-                (user_id, provider_id, state, aspsp_name, aspsp_country, expires_at, provider_reference, source_bank_account_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"#,
-        )
-        .bind(user_id)
-        .bind(provider_id)
-        .bind(state)
-        .bind(institution_name)
-        .bind(institution_country)
-        .bind(expires_at)
-        .bind(provider_reference)
-        .bind(source_bank_account_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        storage
+            .bank
+            .create_auth_state(BankAuthState {
+                user_id,
+                provider_id,
+                state,
+                aspsp_name: Some(institution_name),
+                aspsp_country: Some(institution_country),
+                provider_reference,
+                source_bank_account_id,
+                expires_at,
+            })
+            .await?;
 
         return Ok(redirect_url);
     }
@@ -143,20 +136,14 @@ async fn get_connection_source_bank_account_id(
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let source_bank_account_id = sqlx::query_scalar::<_, Option<Uuid>>(
-            "SELECT source_bank_account_id FROM bank_connections WHERE id = $1 AND user_id = $2",
-        )
-        .bind(connection_id)
-        .bind(user_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .flatten();
-
-        return Ok(source_bank_account_id);
+        return Ok(storage
+            .bank
+            .find_connection(user_id, connection_id)
+            .await?
+            .and_then(|connection| connection.source_bank_account_id));
     }
 
     #[allow(unreachable_code)]
@@ -168,8 +155,8 @@ async fn get_connection_source_bank_account_id(
 #[cfg(feature = "server")]
 pub mod callback {
     use axum::response::{IntoResponse, Redirect, Response};
-    use sqlx::PgPool;
-    use sqlx::Row;
+
+    use crate::storage::{bank::NewBankConnection, Storage};
 
     #[derive(serde::Deserialize)]
     pub struct BankCallbackParams {
@@ -182,7 +169,7 @@ pub mod callback {
 
     pub async fn handle_callback(
         axum::extract::Query(params): axum::extract::Query<BankCallbackParams>,
-        axum::extract::Extension(pool): axum::extract::Extension<PgPool>,
+        axum::extract::Extension(storage): axum::extract::Extension<Storage>,
         axum::extract::Extension(cookies): axum::extract::Extension<tower_cookies::Cookies>,
     ) -> Response {
         if let Some(err) = params.error {
@@ -216,31 +203,14 @@ pub mod callback {
                 None => return Redirect::temporary("/login").into_response(),
             };
 
-            let row = sqlx::query!(
-                "SELECT user_id FROM sessions WHERE token = $1 AND expires_at > NOW()",
-                token
-            )
-            .fetch_optional(&pool)
-            .await;
-
-            match row {
-                Ok(Some(r)) => r.user_id,
+            match storage.users.find_session_user(&token).await {
+                Ok(Some(user_id)) => user_id,
                 _ => return Redirect::temporary("/login").into_response(),
             }
         };
 
-        let state_row = sqlx::query(
-            r#"DELETE FROM bank_auth_states
-               WHERE state = $1 AND expires_at > NOW() AND user_id = $2
-               RETURNING provider_id, aspsp_name, aspsp_country, provider_reference, source_bank_account_id"#,
-        )
-        .bind(state)
-        .bind(user_id)
-        .fetch_optional(&pool)
-        .await;
-
-        let state_row = match state_row {
-            Ok(Some(r)) => r,
+        let auth_state = match storage.bank.consume_auth_state(user_id, &state).await {
+            Ok(Some(auth_state)) => auth_state,
             Ok(None) => {
                 return Redirect::temporary(
                     "/bank-accounts?error=Invalid+or+expired+authorization+state",
@@ -257,13 +227,7 @@ pub mod callback {
             }
         };
 
-        let provider_id: String = state_row.get("provider_id");
-        let aspsp_name: String = state_row.get("aspsp_name");
-        let aspsp_country: String = state_row.get("aspsp_country");
-        let provider_reference: Option<String> = state_row.get("provider_reference");
-        let source_bank_account_id: Option<uuid::Uuid> = state_row.get("source_bank_account_id");
-
-        let provider = match crate::bank_sync::get_provider(&provider_id).await {
+        let provider = match crate::bank_sync::get_provider(&auth_state.provider_id).await {
             Ok(provider) => provider,
             Err(e) => {
                 eprintln!("[bank-sync] Provider config error: {e}");
@@ -275,8 +239,8 @@ pub mod callback {
             }
         };
 
-        let completion_code = if provider_id == "gocardless" {
-            match provider_reference {
+        let completion_code = if auth_state.provider_id == "gocardless" {
+            match auth_state.provider_reference {
                 Some(reference) => reference,
                 None => {
                     return Redirect::temporary(
@@ -309,36 +273,18 @@ pub mod callback {
             }
         };
 
-        let access_valid_until = chrono::Utc::now() + chrono::Duration::days(90);
-        let provider_accounts_json = match serde_json::to_value(&accounts) {
-            Ok(value) => value,
-            Err(e) => {
-                eprintln!("[bank-sync] Failed to encode provider accounts: {e}");
-                return (
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to store bank accounts",
-                )
-                    .into_response();
-            }
+        let connection = NewBankConnection {
+            user_id,
+            provider_id: auth_state.provider_id,
+            provider_session_id: session_id,
+            aspsp_name: auth_state.aspsp_name,
+            aspsp_country: auth_state.aspsp_country,
+            access_valid_until: chrono::Utc::now() + chrono::Duration::days(90),
+            provider_accounts: accounts,
+            source_bank_account_id: auth_state.source_bank_account_id,
         };
 
-        let connection_id: uuid::Uuid = match sqlx::query_scalar(
-            r#"INSERT INTO bank_connections
-                (user_id, provider_id, provider_session_id, aspsp_name, aspsp_country, access_valid_until, provider_accounts_json, source_bank_account_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING id"#,
-        )
-        .bind(user_id)
-        .bind(provider_id)
-        .bind(session_id)
-        .bind(aspsp_name)
-        .bind(aspsp_country)
-        .bind(access_valid_until)
-        .bind(provider_accounts_json)
-        .bind(source_bank_account_id)
-        .fetch_one(&pool)
-        .await
-        {
+        let connection_id = match storage.bank.create_connection(connection).await {
             Ok(id) => id,
             Err(e) => {
                 eprintln!("[bank-sync] Failed to insert bank_connection: {e}");
@@ -365,22 +311,13 @@ pub async fn list_connection_accounts(
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let rows = sqlx::query_as::<_, crate::models::bank_sync::BankAccountRecord>(
-            r#"SELECT id, user_id, bank_connection_id, internal_account_id,
-                provider_account_uid, iban, name, currency, balance, last_synced_at, created_at
-            FROM bank_accounts
-            WHERE bank_connection_id = $1 AND user_id = $2"#,
-        )
-        .bind(connection_id)
-        .bind(user_id)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(rows);
+        return Ok(storage
+            .bank
+            .list_connection_accounts(user_id, connection_id)
+            .await?);
     }
 
     #[allow(unreachable_code)]
@@ -398,54 +335,34 @@ pub async fn map_bank_account(
 ) -> Result<Uuid, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::server::auth::{extract_context, require_auth};
+        use crate::{
+            server::auth::{extract_context, require_auth},
+            storage::bank::ProviderAccount,
+        };
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let count = sqlx::query_scalar!(
-            "SELECT COUNT(*) FROM bank_connections WHERE id = $1 AND user_id = $2",
-            connection_id,
-            user_id
-        )
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .unwrap_or(0);
+        storage
+            .bank
+            .find_connection(user_id, connection_id)
+            .await?
+            .ok_or_else(|| ServerFnError::new("Connection not found"))?;
 
-        if count == 0 {
-            return Err(ServerFnError::new("Connection not found"));
-        }
-
-        let bank_account_id: Uuid = sqlx::query_scalar(
-            r#"INSERT INTO bank_accounts
-                (user_id, bank_connection_id, internal_account_id,
-                 provider_account_uid, iban, name, currency, is_manual)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE)
-            ON CONFLICT (bank_connection_id, provider_account_uid)
-                WHERE bank_connection_id IS NOT NULL AND provider_account_uid IS NOT NULL
-                DO UPDATE SET
-                    internal_account_id = EXCLUDED.internal_account_id,
-                    iban = EXCLUDED.iban,
-                    name = EXCLUDED.name,
-                    currency = EXCLUDED.currency,
-                    is_manual = FALSE,
-                    last_synced_at = NULL,
-                    balance = NULL
-            RETURNING id"#,
-        )
-        .bind(user_id)
-        .bind(connection_id)
-        .bind(internal_account_id)
-        .bind(provider_account_uid)
-        .bind(provider_account_iban)
-        .bind(provider_account_name)
-        .bind(provider_account_currency)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(bank_account_id);
+        return Ok(storage
+            .bank
+            .map_provider_account(
+                user_id,
+                connection_id,
+                ProviderAccount {
+                    uid: provider_account_uid,
+                    name: provider_account_name,
+                    iban: provider_account_iban,
+                    currency: provider_account_currency,
+                },
+                internal_account_id,
+            )
+            .await?);
     }
 
     #[allow(unreachable_code)]
@@ -463,33 +380,31 @@ pub async fn link_existing_bank_account(
 ) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::server::auth::{extract_context, require_auth};
+        use crate::{
+            server::auth::{extract_context, require_auth},
+            storage::bank::ProviderAccount,
+        };
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let existing = sqlx::query(
-            r#"SELECT ba.is_manual, ba.bank_connection_id, bc.source_bank_account_id
-            FROM bank_accounts ba
-            LEFT JOIN bank_connections bc ON bc.id = $2
-            WHERE ba.id = $1 AND ba.user_id = $3"#,
-        )
-        .bind(bank_account_id)
-        .bind(connection_id)
-        .bind(user_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
+        let existing = storage
+            .bank
+            .find_account(user_id, bank_account_id)
+            .await?
+            .ok_or_else(|| ServerFnError::new("Bank account not found"))?;
 
-        let is_manual: bool = existing.get("is_manual");
-        let source_bank_account_id: Option<Uuid> = existing.get("source_bank_account_id");
-
-        if !is_manual {
+        if !existing.is_manual {
             return Err(ServerFnError::new(
                 "Only manual bank accounts can be connected",
             ));
         }
+
+        let source_bank_account_id = storage
+            .bank
+            .find_connection(user_id, connection_id)
+            .await?
+            .and_then(|connection| connection.source_bank_account_id);
 
         if source_bank_account_id != Some(bank_account_id) {
             return Err(ServerFnError::new(
@@ -497,28 +412,20 @@ pub async fn link_existing_bank_account(
             ));
         }
 
-        sqlx::query(
-            r#"UPDATE bank_accounts
-            SET bank_connection_id = $2,
-                provider_account_uid = $3,
-                iban = COALESCE($4, iban),
-                name = COALESCE($5, name),
-                currency = $6,
-                is_manual = FALSE,
-                last_synced_at = NULL,
-                balance = NULL
-            WHERE id = $1 AND user_id = $7"#,
-        )
-        .bind(bank_account_id)
-        .bind(connection_id)
-        .bind(provider_account_uid)
-        .bind(provider_account_iban)
-        .bind(provider_account_name)
-        .bind(provider_account_currency)
-        .bind(user_id)
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        storage
+            .bank
+            .connect_account(
+                user_id,
+                bank_account_id,
+                connection_id,
+                ProviderAccount {
+                    uid: provider_account_uid,
+                    name: provider_account_name,
+                    iban: provider_account_iban,
+                    currency: provider_account_currency,
+                },
+            )
+            .await?;
 
         return Ok(());
     }
@@ -888,22 +795,23 @@ pub fn BankAccountMap(connection_id: Uuid) -> Element {
     };
 
     let internal_accounts = internal_accounts_resource.read().clone();
-    let mut selections: Signal<Vec<(String, Option<String>, Option<String>, String, String, bool)>> =
-        use_signal(|| {
-            provider_accounts
-                .iter()
-                .map(|a| {
-                    (
-                        a.uid.clone(),
-                        a.name.clone(),
-                        a.iban.clone(),
-                        a.currency.clone(),
-                        String::new(),
-                        a.already_linked,
-                    )
-                })
-                .collect()
-        });
+    let mut selections: Signal<
+        Vec<(String, Option<String>, Option<String>, String, String, bool)>,
+    > = use_signal(|| {
+        provider_accounts
+            .iter()
+            .map(|a| {
+                (
+                    a.uid.clone(),
+                    a.name.clone(),
+                    a.iban.clone(),
+                    a.currency.clone(),
+                    String::new(),
+                    a.already_linked,
+                )
+            })
+            .collect()
+    });
     let mut selected_uid: Signal<Option<String>> = use_signal(|| {
         if source_bank_account_id.is_some() {
             provider_accounts.first().map(|a| a.uid.clone())
@@ -1135,50 +1043,27 @@ async fn get_provider_accounts_for_connection(
 ) -> Result<Vec<ProviderBankAccountInfo>, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::{
-            bank_sync::provider::ProviderBankAccount,
-            server::auth::{extract_context, require_auth},
-        };
+        use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let row = sqlx::query(
-            "SELECT provider_accounts_json FROM bank_connections WHERE id = $1 AND user_id = $2",
-        )
-        .bind(connection_id)
-        .bind(user_id)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Connection not found"))?;
-
-        let accounts: Vec<ProviderBankAccount> = row
-            .get::<Option<serde_json::Value>, _>("provider_accounts_json")
-            .map(serde_json::from_value)
-            .transpose()
-            .map_err(|e| ServerFnError::new(e.to_string()))?
-            .unwrap_or_default();
+        let accounts = storage
+            .bank
+            .find_connection(user_id, connection_id)
+            .await?
+            .ok_or_else(|| ServerFnError::new("Connection not found"))?
+            .provider_accounts;
 
         // Determine which provider UIDs are already linked on other connections.
         let uids: Vec<String> = accounts.iter().map(|a| a.uid.clone()).collect();
         let linked_uids = if uids.is_empty() {
             Vec::new()
         } else {
-            sqlx::query_scalar!(
-                r#"SELECT DISTINCT provider_account_uid FROM bank_accounts
-                   WHERE user_id = $1 AND provider_account_uid = ANY($2)
-                   AND bank_connection_id IS DISTINCT FROM $3"#,
-                user_id,
-                &uids,
-                connection_id
-            )
-            .fetch_all(&pool)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
+            storage
+                .bank
+                .linked_provider_uids(user_id, uids, connection_id)
+                .await?
         };
 
         return Ok(accounts

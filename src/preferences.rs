@@ -23,20 +23,13 @@ async fn save_preferences(preferences: Preferences) -> Result<(), ServerFnError>
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let stored =
-            serde_json::to_value(&preferences).map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        sqlx::query!(
-            "UPDATE users SET preferences = $1 WHERE id = $2",
-            stored,
-            user_id
-        )
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        storage
+            .users
+            .save_preferences(user_id, &preferences)
+            .await?;
     }
 
     Ok(())
