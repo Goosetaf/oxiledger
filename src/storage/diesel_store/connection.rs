@@ -12,8 +12,7 @@ pub enum DbConnection {
     Sqlite(SqliteConnection),
 }
 
-/// Runs a query on the database's own connection type, for the features the shared query
-/// builder leaves out, such as `ON CONFLICT`. The body is compiled once per database.
+/// Runs a query on the native connection, for features the shared query builder lacks.
 macro_rules! on_backend {
     ($conn:expr, |$c:ident| $body:expr) => {
         match $conn {
@@ -102,7 +101,7 @@ impl Database {
             }
         }
 
-        // Every connection to an in-memory database gets a database of its own.
+        // Each connection to an in memory database would get an empty database of its own.
         let max_size = if target.is_in_memory() { 1 } else { 10 };
 
         let pool = Pool::builder()
@@ -114,7 +113,6 @@ impl Database {
         Ok(Self { pool })
     }
 
-    /// Runs blocking database work off the async runtime.
     pub async fn run<T, F>(&self, work: F) -> StorageResult<T>
     where
         F: FnOnce(&mut DbConnection) -> StorageResult<T> + Send + 'static,
@@ -131,7 +129,6 @@ impl Database {
         .map_err(|err| StorageError::Other(format!("Database task failed: {err}")))?
     }
 
-    /// Runs `work` in a transaction that commits if it returns `Ok` and rolls back otherwise.
     pub async fn transaction<T, F>(&self, work: F) -> StorageResult<T>
     where
         F: FnOnce(&mut DbConnection) -> StorageResult<T> + Send + 'static,
@@ -162,8 +159,8 @@ pub(super) fn write_transaction<T>(
 ) -> StorageResult<T> {
     match conn {
         DbConnection::Postgres(pg) => AnsiTransactionManager::begin_transaction(pg)?,
-        // Takes the write lock up front. A deferred transaction that reads first cannot wait
-        // for another writer when it comes to write, and fails instead.
+        // A deferred transaction that reads first cannot wait for another writer when it
+        // comes to write, and fails instead.
         DbConnection::Sqlite(sqlite) => {
             AnsiTransactionManager::begin_transaction_sql(sqlite, "BEGIN IMMEDIATE")?
         }

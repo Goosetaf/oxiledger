@@ -11,5 +11,4 @@
 
 .env
 
-# Local SQLite database
 /data/

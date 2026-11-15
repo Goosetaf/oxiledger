@@ -1,15 +1,4 @@
-//! Column types that both databases can store, each in its own way.
-//!
-//! | SQL type      | Postgres      | SQLite                                  |
-//! | ------------- | ------------- | --------------------------------------- |
-//! | `DbUuid`      | `uuid`        | text, hyphenated                        |
-//! | `DbTimestamp` | `timestamptz` | text, UTC with microseconds             |
-//! | `DbMoney`     | `numeric`     | integer, in ten-thousandths of a unit   |
-//! | `DbJson`      | `jsonb`       | text                                    |
-//! | enums         | native enum   | text                                    |
-//!
-//! A SQLite integer holds amounts up to about 922 trillion, a little under what
-//! `NUMERIC(19,4)` allows, and unlike on Postgres that limit applies to sums as well.
+//! SQLite stores money as an integer, which holds amounts and sums up to about 922 trillion.
 
 use std::io::Write;
 

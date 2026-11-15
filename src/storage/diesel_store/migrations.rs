@@ -119,7 +119,6 @@ mod tests {
         drop(conn);
 
         let storage = Storage::connect(&url).await.unwrap();
-        // Starting again finds nothing left to do.
         Storage::connect(&url).await.unwrap();
 
         let credentials = storage

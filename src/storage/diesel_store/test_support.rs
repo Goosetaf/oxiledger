@@ -1,5 +1,3 @@
-//! Throwaway databases for the repository tests.
-
 use std::path::PathBuf;
 
 use diesel::connection::SimpleConnection;
@@ -8,7 +6,6 @@ use uuid::Uuid;
 
 use crate::storage::Storage;
 
-/// Set to a Postgres URL to run the repository tests against Postgres as well as SQLite.
 pub const POSTGRES_URL_VAR: &str = "OXILEDGER_TEST_POSTGRES_URL";
 
 const SETUP_LOCK: i64 = 0x6f78_6974_6573_7473;
@@ -42,8 +39,7 @@ impl Drop for Cleanup {
     }
 }
 
-/// A file rather than an in-memory database, so the tests use several connections like the
-/// running application does.
+/// A file and not an in memory database, so that the tests use several connections.
 pub async fn sqlite() -> TestDatabase {
     let path = std::env::temp_dir().join(format!("oxiledger-test-{}.db", Uuid::new_v4()));
     let storage = Storage::connect(&format!("sqlite://{}", path.display()))
@@ -56,8 +52,6 @@ pub async fn sqlite() -> TestDatabase {
     }
 }
 
-/// A schema of its own in the database named by `OXILEDGER_TEST_POSTGRES_URL`, or `None` when
-/// the variable is not set.
 pub async fn postgres() -> Option<TestDatabase> {
     let (url, cleanup) = postgres_schema()?;
     let storage = Storage::connect(&url)
@@ -70,7 +64,6 @@ pub async fn postgres() -> Option<TestDatabase> {
     })
 }
 
-/// Creates an empty schema and returns a URL that connects into it.
 pub fn postgres_schema() -> Option<(String, Cleanup)> {
     let url = std::env::var(POSTGRES_URL_VAR).ok()?;
     let schema = format!("test_{}", Uuid::new_v4().simple());

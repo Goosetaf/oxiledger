@@ -14,7 +14,7 @@ pub async fn create_manual_bank_account(
     {
         use crate::{
             server::auth::{extract_context, require_auth},
-            storage::bank::BankAccountDetails,
+            storage::bank_accounts::BankAccountDetails,
         };
 
         let (storage, cookies) = extract_context().await?;
@@ -32,12 +32,7 @@ pub async fn create_manual_bank_account(
 
         // Verify the selected ledger account belongs to this user (only when provided).
         if let Some(account_id) = internal_account_id {
-            if storage
-                .ledger
-                .find_account(user_id, account_id)
-                .await?
-                .is_none()
-            {
+            if storage.accounts.find(user_id, account_id).await?.is_none() {
                 return Err(ServerFnError::new("Ledger account not found"));
             }
         }
@@ -49,7 +44,10 @@ pub async fn create_manual_bank_account(
             internal_account_id,
         };
 
-        return Ok(storage.bank.create_manual_account(user_id, details).await?);
+        return Ok(storage
+            .bank_accounts
+            .create_manual(user_id, details)
+            .await?);
     }
 
     #[allow(unreachable_code)]

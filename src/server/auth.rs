@@ -36,17 +36,14 @@ pub async fn create_session(storage: &Storage, user_id: Uuid) -> StorageResult<S
     let token = Uuid::new_v4().to_string();
     let expires_at = chrono::Utc::now() + chrono::Duration::days(SESSION_DURATION_DAYS);
 
-    storage
-        .users
-        .create_session(user_id, &token, expires_at)
-        .await?;
+    storage.sessions.create(user_id, &token, expires_at).await?;
 
     Ok(token)
 }
 
 /// Delete a session by its token (logout).
 pub async fn delete_session(storage: &Storage, token: &str) -> StorageResult<()> {
-    storage.users.delete_session(token).await
+    storage.sessions.delete(token).await
 }
 
 pub async fn needs_setup(storage: &Storage) -> StorageResult<bool> {
@@ -67,8 +64,8 @@ pub async fn require_auth(storage: &Storage, cookies: &Cookies) -> Result<Uuid, 
         })?;
 
     storage
-        .users
-        .find_session_user(&token)
+        .sessions
+        .find_active_user(&token)
         .await?
         .ok_or_else(|| {
             ServerFnError::from(HttpError::new(
@@ -78,13 +75,9 @@ pub async fn require_auth(storage: &Storage, cookies: &Cookies) -> Result<Uuid, 
         })
 }
 
-/// Extract the storage handle and cookies from the request context inside a server function.
 pub async fn extract_context() -> Result<(Storage, Cookies), ServerFnError> {
-    // Prefer directly reading values from the FullstackContext to avoid
-    // dealing with differing axum_core generic parameters across
-    // dependency versions. This reads the request extensions that were
-    // previously injected by middleware (eg. `CookieManagerLayer` and
-    // `Extension(storage)` in `main.rs`).
+    // Reading the request extensions directly avoids the differing axum_core generic
+    // parameters across dependency versions.
     let ctx = FullstackContext::current()
         .ok_or_else(|| ServerFnError::new("No FullstackContext available"))?;
 

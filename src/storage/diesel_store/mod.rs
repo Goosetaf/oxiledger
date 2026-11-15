@@ -1,11 +1,13 @@
-//! Repositories backed by Diesel, for SQLite and Postgres alike. Nothing outside this module
-//! may depend on Diesel.
+//! Nothing outside this module may depend on Diesel.
 
-mod bank;
+mod accounts;
+mod bank_accounts;
+mod bank_transactions;
 mod connection;
-mod ledger;
 mod migrations;
 mod schema;
+mod sessions;
+mod transactions;
 mod types;
 mod users;
 
@@ -36,8 +38,11 @@ pub async fn connect(database_url: &str) -> StorageResult<Storage> {
 
     Ok(Storage {
         users: Arc::new(users::UserStore::new(db.clone())),
-        ledger: Arc::new(ledger::LedgerStore::new(db.clone())),
-        bank: Arc::new(bank::BankStore::new(db)),
+        sessions: Arc::new(sessions::SessionStore::new(db.clone())),
+        accounts: Arc::new(accounts::AccountStore::new(db.clone())),
+        transactions: Arc::new(transactions::TransactionStore::new(db.clone())),
+        bank_accounts: Arc::new(bank_accounts::BankAccountStore::new(db.clone())),
+        bank_transactions: Arc::new(bank_transactions::BankTransactionStore::new(db)),
     })
 }
 

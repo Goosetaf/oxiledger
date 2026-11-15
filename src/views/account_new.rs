@@ -5,9 +5,8 @@ use crate::{
 use dioxus::prelude::*;
 
 #[cfg(feature = "server")]
-use crate::storage::{ledger::AccountDraft, StorageError};
+use crate::storage::{accounts::AccountDraft, StorageError};
 
-/// Checks and tidies what the account form sent.
 #[cfg(feature = "server")]
 pub(crate) fn account_draft(req: CreateAccountRequest) -> Result<AccountDraft, ServerFnError> {
     let name = req.name.trim();
@@ -54,8 +53,8 @@ pub async fn create_account(req: CreateAccountRequest) -> Result<Account, Server
         let draft = account_draft(req)?;
 
         return storage
-            .ledger
-            .create_account(user_id, draft)
+            .accounts
+            .create(user_id, draft)
             .await
             .map_err(account_save_error);
     }

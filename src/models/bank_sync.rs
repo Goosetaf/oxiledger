@@ -40,7 +40,6 @@ pub struct BankAccountRecord {
     pub iban: Option<String>,
     pub name: Option<String>,
     pub currency: String,
-    /// `true` when the account is not connected to a provider.
     pub is_manual: bool,
     pub balance: Option<Decimal>,
     pub last_synced_at: Option<DateTime<Utc>>,

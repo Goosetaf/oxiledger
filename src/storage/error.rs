@@ -6,7 +6,6 @@ pub type StorageResult<T> = Result<T, StorageError>;
 pub enum StorageError {
     UniqueViolation(String),
     ForeignKeyViolation(String),
-    /// The write was refused because the data it relied on had changed.
     Conflict(String),
     Other(String),
 }

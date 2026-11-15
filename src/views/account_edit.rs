@@ -15,8 +15,8 @@ async fn get_account(id: Uuid) -> Result<Account, ServerFnError> {
         let user_id = require_auth(&storage, &cookies).await?;
 
         return storage
-            .ledger
-            .find_account(user_id, id)
+            .accounts
+            .find(user_id, id)
             .await?
             .ok_or_else(|| ServerFnError::new("Account not found"));
     }
@@ -40,8 +40,8 @@ async fn update_account(id: Uuid, req: CreateAccountRequest) -> Result<(), Serve
         let draft = account_draft(req)?;
 
         let updated = storage
-            .ledger
-            .update_account(user_id, id, draft)
+            .accounts
+            .update(user_id, id, draft)
             .await
             .map_err(account_save_error)?;
 

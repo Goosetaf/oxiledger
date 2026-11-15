@@ -14,7 +14,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::storage::{
-    users::{NewUser, OidcIdentity, OidcState},
+    sessions::OidcState,
+    users::{NewUser, OidcIdentity},
     Storage, StorageResult,
 };
 
@@ -300,7 +301,7 @@ pub async fn handle_start(
     let expires_at = chrono::Utc::now() + chrono::Duration::minutes(10);
 
     let result = storage
-        .users
+        .sessions
         .create_oidc_state(OidcState {
             provider_id: provider_id.clone(),
             csrf_token: csrf_token.secret().clone(),
@@ -348,7 +349,7 @@ pub async fn handle_callback(
     };
 
     // 1. Look up + consume the state row (validates CSRF + retrieves PKCE verifier).
-    let state_row = storage.users.consume_oidc_state(&params.state).await;
+    let state_row = storage.sessions.consume_oidc_state(&params.state).await;
 
     let state_row = match state_row {
         Ok(Some(r)) => r,
@@ -441,7 +442,7 @@ pub async fn handle_callback(
     // 4. Extract identity claims.
     let subject = claims.subject().to_string();
     let identity = OidcIdentity {
-        provider: provider.id.clone(), // e.g. "1"
+        provider: provider.id.clone(),
         subject: subject.clone(),
     };
 
@@ -491,7 +492,6 @@ pub async fn handle_callback(
     }
 
     // 7. Upsert the user row.
-    //    For a known identity (same provider + subject) the email is updated so it stays fresh.
     let user_id: Uuid = match storage
         .users
         .upsert_oidc(&username, &email, &identity)

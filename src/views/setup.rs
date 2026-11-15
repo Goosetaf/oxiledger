@@ -35,7 +35,7 @@ async fn setup_action(req: RegisterRequest) -> Result<(), ServerFnError> {
             return Err(ServerFnError::new("Password must be at least 8 characters"));
         }
 
-        // Saves hashing a password that cannot be used; `create_first` checks again.
+        // Saves hashing a password that cannot be used. `create_first` checks again.
         if !auth::needs_setup(&storage).await? {
             return Err(ServerFnError::new("This instance is already set up"));
         }
