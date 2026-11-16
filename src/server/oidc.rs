@@ -431,8 +431,51 @@ pub async fn handle_callback(
         }
     };
 
+    // The provider answers with `error` instead of `code` when it rejects or the
+    // user cancels (RFC 6749 §4.1.2.1).
+    if let Some(error) = params.error {
+        eprintln!(
+            "[oidc] Provider returned error `{error}`: {}",
+            params.error_description.unwrap_or_default()
+        );
+        if let Some(uri) = params.error_uri {
+            eprintln!("[oidc] Error URI: {uri}");
+        }
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            "Sign-in was cancelled or rejected by the identity provider.",
+        )
+            .into_response();
+    }
+
+    // If the provider identifies itself in the response, it must be the provider
+    // this flow was started with (RFC 9207).
+    if let Some(iss) = params.iss {
+        let matches =
+            IssuerUrl::new(iss.clone()).is_ok_and(|issuer| issuer.url() == provider.issuer.url());
+        if !matches {
+            eprintln!("[oidc] Authorization response issuer mismatch: {iss}");
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                "Invalid issuer in authorization response",
+            )
+                .into_response();
+        }
+    }
+
+    let code = match params.code {
+        Some(code) => code,
+        None => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                "Missing authorization code",
+            )
+                .into_response();
+        }
+    };
+
     // 2. Exchange authorization code for tokens.
-    let code = AuthorizationCode::new(params.code);
+    let code = AuthorizationCode::new(code);
     let pkce_verifier = PkceCodeVerifier::new(state_row.pkce_verifier);
     let nonce = Nonce::new(state_row.nonce);
 
@@ -678,6 +721,12 @@ async fn has_account_or_set_up(
 /// Query parameters received on the OIDC callback URL.
 #[derive(serde::Deserialize)]
 pub struct CallbackParams {
-    pub code: String,
     pub state: String,
+    pub code: Option<String>,
+    /// Present instead of `code` when the provider rejects the request or the user cancels.
+    pub error: Option<String>,
+    pub error_description: Option<String>,
+    pub error_uri: Option<String>,
+    /// The provider's issuer, when it implements RFC 9207.
+    pub iss: Option<String>,
 }
