@@ -10,7 +10,7 @@ use openidconnect::{
     IdTokenFields, IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier,
     RedirectUrl, Scope, StandardErrorResponse, StandardTokenResponse, TokenResponse,
 };
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
 use crate::storage::{
@@ -81,12 +81,53 @@ pub struct OidcProvider {
     pub id: String,
     /// Display name shown on the login button.
     pub name: String,
-    /// Discovered + configured openidconnect client.
-    pub client: StoredOidcClient,
+    issuer: IssuerUrl,
+    client_id: ClientId,
+    client_secret: ClientSecret,
+    redirect_uri: RedirectUrl,
+    /// Discovered + configured openidconnect client, cached across sign-ins. Its
+    /// signing keys go stale when the provider rotates them, so a failed
+    /// verification re-discovers and replaces it.
+    client: Arc<RwLock<StoredOidcClient>>,
     /// When `true`, anyone this provider signs in gets an account on their first sign-in.
     pub allow_registration: bool,
     /// Who may sign in through this provider, checked on every sign-in.
     pub allowed_groups: AllowedGroups,
+}
+
+impl OidcProvider {
+    /// The cached client, cloned so no lock is held across await points.
+    fn client(&self) -> StoredOidcClient {
+        self.client
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Re-discovers the provider, caches the resulting client, and returns it.
+    async fn refresh(&self, http_client: &reqwest::Client) -> Result<StoredOidcClient, String> {
+        let metadata = CoreProviderMetadata::discover_async(self.issuer.clone(), http_client)
+            .await
+            .map_err(|e| e.to_string())?;
+        let client = build_client(
+            metadata,
+            self.client_id.clone(),
+            self.client_secret.clone(),
+            self.redirect_uri.clone(),
+        );
+        *self.client.write().unwrap_or_else(|e| e.into_inner()) = client.clone();
+        Ok(client)
+    }
+}
+
+fn build_client(
+    metadata: CoreProviderMetadata,
+    client_id: ClientId,
+    client_secret: ClientSecret,
+    redirect_uri: RedirectUrl,
+) -> StoredOidcClient {
+    Client::from_provider_metadata(metadata, client_id, Some(client_secret))
+        .set_redirect_uri(redirect_uri)
 }
 
 /// App-level OIDC configuration shared across requests via `Arc`.
@@ -214,32 +255,41 @@ pub async fn load_config() -> OidcConfig {
             }
         };
 
-        let metadata = match CoreProviderMetadata::discover_async(issuer_url, &http_client).await {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("[oidc] Discovery failed for provider {n} ({issuer}): {e}");
-                continue;
-            }
-        };
+        let metadata =
+            match CoreProviderMetadata::discover_async(issuer_url.clone(), &http_client).await {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("[oidc] Discovery failed for provider {n} ({issuer}): {e}");
+                    continue;
+                }
+            };
 
-        let client: StoredOidcClient = Client::from_provider_metadata(
-            metadata,
-            ClientId::new(client_id),
-            Some(ClientSecret::new(client_secret)),
-        )
-        .set_redirect_uri(match RedirectUrl::new(redirect_uri.clone()) {
+        let redirect_url = match RedirectUrl::new(redirect_uri.clone()) {
             Ok(u) => u,
             Err(e) => {
                 eprintln!("[oidc] Invalid redirect URI ({redirect_uri}) for provider {n}: {e}");
                 continue;
             }
-        });
+        };
+
+        let client_id = ClientId::new(client_id);
+        let client_secret = ClientSecret::new(client_secret);
+        let client = build_client(
+            metadata,
+            client_id.clone(),
+            client_secret.clone(),
+            redirect_url.clone(),
+        );
 
         println!("[oidc] Registered provider {n}: {name}");
         providers.push(OidcProvider {
             id: n.to_string(),
             name,
-            client,
+            issuer: issuer_url,
+            client_id,
+            client_secret,
+            redirect_uri: redirect_url,
+            client: Arc::new(RwLock::new(client)),
             allow_registration: env_var_is_true(&format!("{prefix}ALLOW_REGISTRATION")),
             allowed_groups,
         });
@@ -280,8 +330,8 @@ pub async fn handle_start(
     let nonce = Nonce::new_random();
     let nonce_for_url = nonce.clone();
 
-    let mut auth_request = provider
-        .client
+    let client = provider.client();
+    let mut auth_request = client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
             CsrfToken::new_random,
@@ -386,7 +436,8 @@ pub async fn handle_callback(
     let pkce_verifier = PkceCodeVerifier::new(state_row.pkce_verifier);
     let nonce = Nonce::new(state_row.nonce);
 
-    let token_response = match provider.client.exchange_code(code) {
+    let mut client = provider.client();
+    let token_response = match client.exchange_code(code) {
         Ok(request) => {
             request
                 .set_pkce_verifier(pkce_verifier)
@@ -415,7 +466,8 @@ pub async fn handle_callback(
         }
     };
 
-    // 3. Verify and decode the ID token.
+    // 3. Verify and decode the ID token. The cached keys only go stale when the
+    // provider rotates them, so a failed verification is the signal to re-discover.
     let id_token = match token_response.id_token() {
         Some(t) => t,
         None => {
@@ -427,15 +479,38 @@ pub async fn handle_callback(
         }
     };
 
-    let claims = match id_token.claims(&provider.client.id_token_verifier(), &nonce) {
+    let initial_claims = {
+        let verifier = client.id_token_verifier();
+        id_token.claims(&verifier, &nonce)
+    };
+    let claims = match initial_claims {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[oidc] ID token verification failed: {e}");
-            return (
-                axum::http::StatusCode::UNAUTHORIZED,
-                "ID token verification failed",
-            )
-                .into_response();
+            eprintln!("[oidc] ID token verification failed: {e} — refreshing provider keys");
+            client = match provider.refresh(&http_client).await {
+                Ok(client) => client,
+                Err(e) => {
+                    eprintln!("[oidc] Failed to refresh provider keys: {e}");
+                    return (
+                        axum::http::StatusCode::UNAUTHORIZED,
+                        "ID token verification failed",
+                    )
+                        .into_response();
+                }
+            };
+
+            let verifier = client.id_token_verifier();
+            match id_token.claims(&verifier, &nonce) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[oidc] ID token verification failed after refresh: {e}");
+                    return (
+                        axum::http::StatusCode::UNAUTHORIZED,
+                        "ID token verification failed",
+                    )
+                        .into_response();
+                }
+            }
         }
     };
 
@@ -459,7 +534,7 @@ pub async fn handle_callback(
 
     // 5. Providers limited to some groups only let their members in, on every sign-in.
     if let AllowedGroups::Only(allowed) = &provider.allowed_groups {
-        let groups = user_groups(provider, &token_response, claims, &http_client).await;
+        let groups = user_groups(&client, &token_response, claims, &http_client).await;
         if !groups.iter().any(|g| allowed.contains(g)) {
             return (
                 axum::http::StatusCode::FORBIDDEN,
@@ -545,7 +620,7 @@ pub async fn handle_callback(
 
 /// The user's groups from the ID token, falling back to the user info endpoint.
 async fn user_groups(
-    provider: &OidcProvider,
+    client: &StoredOidcClient,
     token_response: &OidcTokenResponse,
     claims: &IdTokenClaims<GroupsClaim, CoreGenderClaim>,
     http_client: &reqwest::Client,
@@ -555,7 +630,7 @@ async fn user_groups(
         return groups.clone();
     }
 
-    let request = match provider.client.user_info(
+    let request = match client.user_info(
         token_response.access_token().clone(),
         Some(claims.subject().clone()),
     ) {
