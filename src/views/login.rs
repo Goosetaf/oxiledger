@@ -22,8 +22,8 @@ pub async fn get_auth_options() -> Result<AuthOptions, ServerFnError> {
             .extension::<Arc<crate::server::oidc::OidcConfig>>()
             .ok_or_else(|| ServerFnError::new("OIDC config not available"))?;
 
-        let (pool, _) = crate::server::auth::extract_context().await?;
-        let needs_setup = crate::server::auth::needs_setup(&pool)
+        let (storage, _) = crate::server::auth::extract_context().await?;
+        let needs_setup = crate::server::auth::needs_setup(&storage)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -51,7 +51,7 @@ async fn login_action(req: LoginRequest) -> Result<(), ServerFnError> {
         use crate::server::auth;
         use std::sync::Arc;
 
-        let (pool, cookies) = auth::extract_context().await?;
+        let (storage, cookies) = auth::extract_context().await?;
 
         // Honour the DISABLE_PASSWORD_LOGIN flag even at the API layer so that
         // a direct POST to this endpoint cannot bypass it.
@@ -68,14 +68,11 @@ async fn login_action(req: LoginRequest) -> Result<(), ServerFnError> {
             }
         }
 
-        let row = sqlx::query!(
-            "SELECT id, password_hash FROM users WHERE username = $1",
-            req.username
-        )
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Invalid username or password"))?;
+        let row = storage
+            .users
+            .find_credentials(&req.username)
+            .await?
+            .ok_or_else(|| ServerFnError::new("Invalid username or password"))?;
 
         let hash = row
             .password_hash
@@ -88,7 +85,7 @@ async fn login_action(req: LoginRequest) -> Result<(), ServerFnError> {
             return Err(ServerFnError::new("Invalid username or password"));
         }
 
-        let token = auth::create_session(&pool, row.id)
+        let token = auth::create_session(&storage, row.id)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 

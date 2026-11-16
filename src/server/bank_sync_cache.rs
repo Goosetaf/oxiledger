@@ -7,7 +7,6 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use sqlx::{PgPool, Row};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
@@ -15,6 +14,7 @@ use uuid::Uuid;
 use crate::{
     bank_sync::provider::{AspspInfo, ProviderBalance},
     models::bank_sync::SyncResult,
+    storage::{bank_accounts::SyncableBankAccount, bank_transactions::NewBankTransaction, Storage},
 };
 use dioxus::prelude::ServerFnError;
 
@@ -44,17 +44,6 @@ pub struct BankSyncSettings {
     pub mode: BankSyncMode,
     pub ttl_seconds: Option<i64>,
     pub schedule: Option<String>,
-}
-
-#[derive(Clone)]
-struct SyncableBankAccount {
-    id: Uuid,
-    user_id: Uuid,
-    provider_id: Option<String>,
-    provider_session_id: Option<String>,
-    provider_account_uid: Option<String>,
-    last_synced_at: Option<DateTime<Utc>>,
-    is_manual: bool,
 }
 
 impl BankSyncSettings {
@@ -164,7 +153,7 @@ pub async fn list_aspsps_cached(
 }
 
 pub async fn maybe_lazy_sync_for_user(
-    pool: &PgPool,
+    storage: &Storage,
     user_id: Uuid,
     id: Uuid,
 ) -> Result<(), String> {
@@ -176,7 +165,7 @@ pub async fn maybe_lazy_sync_for_user(
         return Ok(());
     }
 
-    let Some(record) = load_syncable_bank_account(pool, id, Some(user_id)).await? else {
+    let Some(record) = load_syncable_bank_account(storage, id, Some(user_id)).await? else {
         return Err("Bank account not found".to_string());
     };
 
@@ -184,12 +173,12 @@ pub async fn maybe_lazy_sync_for_user(
         return Ok(());
     }
 
-    sync_bank_account_record(pool, record, true).await?;
+    sync_bank_account_record(storage, record, true).await?;
     Ok(())
 }
 
 pub async fn sync_bank_account_for_user(
-    pool: &PgPool,
+    storage: &Storage,
     user_id: Uuid,
     id: Uuid,
     force: bool,
@@ -197,7 +186,7 @@ pub async fn sync_bank_account_for_user(
     let lock = account_sync_lock(id);
     let _guard = lock.lock().await;
 
-    let record = load_syncable_bank_account(pool, id, Some(user_id))
+    let record = load_syncable_bank_account(storage, id, Some(user_id))
         .await?
         .ok_or_else(|| "Bank account not found".to_string())?;
 
@@ -205,18 +194,18 @@ pub async fn sync_bank_account_for_user(
         return Err("Manual accounts do not support automatic sync.".to_string());
     }
 
-    sync_bank_account_record(pool, record, force).await
+    sync_bank_account_record(storage, record, force).await
 }
 
 pub async fn sync_bank_account_internal(
-    pool: &PgPool,
+    storage: &Storage,
     id: Uuid,
     force: bool,
 ) -> Result<SyncResult, String> {
     let lock = account_sync_lock(id);
     let _guard = lock.lock().await;
 
-    let Some(record) = load_syncable_bank_account(pool, id, None).await? else {
+    let Some(record) = load_syncable_bank_account(storage, id, None).await? else {
         return Ok(SyncResult {
             new_count: 0,
             skipped_count: 0,
@@ -230,19 +219,19 @@ pub async fn sync_bank_account_internal(
         });
     }
 
-    sync_bank_account_record(pool, record, force).await
+    sync_bank_account_record(storage, record, force).await
 }
 
-pub async fn start_background_scheduler(pool: PgPool) {
+pub async fn start_background_scheduler(storage: Storage) {
     let settings = BankSyncSettings::from_env();
     let Some(schedule) = settings.background_schedule() else {
         return;
     };
 
     let job = match Job::new_async(schedule.clone(), move |_job_id, _scheduler| {
-        let pool = pool.clone();
+        let storage = storage.clone();
         Box::pin(async move {
-            if let Err(err) = sync_stale_accounts(&pool).await {
+            if let Err(err) = sync_stale_accounts(&storage).await {
                 eprintln!("[bank-sync] Background sync failed: {err}");
             }
         })
@@ -293,34 +282,26 @@ pub fn preferred_balance(balances: &[ProviderBalance]) -> Option<(Decimal, Strin
         .map(|balance| (balance.amount, balance.currency.clone()))
 }
 
-async fn sync_stale_accounts(pool: &PgPool) -> Result<(), String> {
+async fn sync_stale_accounts(storage: &Storage) -> Result<(), String> {
     let settings = BankSyncSettings::from_env();
     if settings.mode != BankSyncMode::Background {
         return Ok(());
     }
 
-    let rows = sqlx::query(
-        r#"
-        SELECT id, last_synced_at
-        FROM bank_accounts
-        WHERE is_manual = FALSE
-          AND bank_connection_id IS NOT NULL
-          AND provider_account_uid IS NOT NULL
-        "#,
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|err| err.to_string())?;
+    let candidates = storage
+        .bank_accounts
+        .list_sync_candidates()
+        .await
+        .map_err(|err| err.to_string())?;
 
-    for row in rows {
-        let id: Uuid = row.get("id");
-        let last_synced_at: Option<DateTime<Utc>> = row.get("last_synced_at");
-        if !settings.should_background_sync(last_synced_at) {
+    for candidate in candidates {
+        let id = candidate.id;
+        if !settings.should_background_sync(candidate.last_synced_at) {
             continue;
         }
 
         let force = settings.ttl_seconds.is_none();
-        if let Err(err) = sync_bank_account_internal(pool, id, force).await {
+        if let Err(err) = sync_bank_account_internal(storage, id, force).await {
             eprintln!("[bank-sync] Failed to sync account {id}: {err}");
         }
     }
@@ -329,7 +310,7 @@ async fn sync_stale_accounts(pool: &PgPool) -> Result<(), String> {
 }
 
 async fn sync_bank_account_record(
-    pool: &PgPool,
+    storage: &Storage,
     record: SyncableBankAccount,
     force: bool,
 ) -> Result<SyncResult, String> {
@@ -350,12 +331,11 @@ async fn sync_bank_account_record(
         }
     }
 
-    let provider_id = record
-        .provider_id
+    let session = record
+        .session
         .ok_or_else(|| "Bank account has no provider connection".to_string())?;
-    let provider_session_id = record
-        .provider_session_id
-        .ok_or_else(|| "Bank account has no provider session".to_string())?;
+    let provider_id = session.provider_id;
+    let provider_session_id = session.provider_session_id;
     let provider_account_uid = record
         .provider_account_uid
         .ok_or_else(|| "Bank account has no provider account UID".to_string())?;
@@ -375,121 +355,35 @@ async fn sync_bank_account_record(
         .map_err(|err| err.to_string())?;
     let balance = preferred_balance(&balances).map(|(amount, _)| amount);
 
-    let mut new_count = 0u32;
-    let mut skipped_count = 0u32;
+    let transactions = transactions
+        .into_iter()
+        .map(|txn| NewBankTransaction {
+            external_id: txn.external_id,
+            date: txn.date,
+            amount: txn.amount,
+            currency: txn.currency,
+            description: txn.description,
+            reference: txn.reference,
+        })
+        .collect();
 
-    let mut tx = pool.begin().await.map_err(|err| err.to_string())?;
-
-    for txn in &transactions {
-        let result = sqlx::query(
-            r#"
-            INSERT INTO bank_transactions
-                (bank_account_id, user_id, external_id, date, amount, currency,
-                 description, reference)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            ON CONFLICT (bank_account_id, external_id) DO NOTHING
-            "#,
-        )
-        .bind(record.id)
-        .bind(record.user_id)
-        .bind(&txn.external_id)
-        .bind(txn.date)
-        .bind(txn.amount)
-        .bind(&txn.currency)
-        .bind(&txn.description)
-        .bind(&txn.reference)
-        .execute(&mut *tx)
+    storage
+        .bank_transactions
+        .import(record.user_id, record.id, transactions, balance)
         .await
-        .map_err(|err| err.to_string())?;
-
-        if result.rows_affected() > 0 {
-            new_count += 1;
-        } else {
-            skipped_count += 1;
-        }
-    }
-
-    sqlx::query(
-        r#"
-        UPDATE bank_accounts
-        SET last_synced_at = NOW(),
-            balance = $2
-        WHERE id = $1
-        "#,
-    )
-    .bind(record.id)
-    .bind(balance)
-    .execute(&mut *tx)
-    .await
-    .map_err(|err| err.to_string())?;
-
-    tx.commit().await.map_err(|err| err.to_string())?;
-
-    Ok(SyncResult {
-        new_count,
-        skipped_count,
-    })
+        .map_err(|err| err.to_string())
 }
 
 async fn load_syncable_bank_account(
-    pool: &PgPool,
+    storage: &Storage,
     id: Uuid,
     user_id: Option<Uuid>,
 ) -> Result<Option<SyncableBankAccount>, String> {
-    let row = match user_id {
-        Some(user_id) => {
-            sqlx::query(
-                r#"
-                SELECT
-                    ba.id,
-                    ba.user_id,
-                    ba.provider_account_uid,
-                    ba.last_synced_at,
-                    ba.is_manual,
-                    bc.provider_id,
-                    bc.provider_session_id
-                FROM bank_accounts ba
-                LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
-                WHERE ba.id = $1 AND ba.user_id = $2
-                "#,
-            )
-            .bind(id)
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-        }
-        None => {
-            sqlx::query(
-                r#"
-                SELECT
-                    ba.id,
-                    ba.user_id,
-                    ba.provider_account_uid,
-                    ba.last_synced_at,
-                    ba.is_manual,
-                    bc.provider_id,
-                    bc.provider_session_id
-                FROM bank_accounts ba
-                LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
-                WHERE ba.id = $1
-                "#,
-            )
-            .bind(id)
-            .fetch_optional(pool)
-            .await
-        }
-    }
-    .map_err(|err| err.to_string())?;
-
-    Ok(row.map(|row| SyncableBankAccount {
-        id: row.get("id"),
-        user_id: row.get("user_id"),
-        provider_id: row.get("provider_id"),
-        provider_session_id: row.get("provider_session_id"),
-        provider_account_uid: row.get("provider_account_uid"),
-        last_synced_at: row.get("last_synced_at"),
-        is_manual: row.get("is_manual"),
-    }))
+    storage
+        .bank_accounts
+        .find_syncable(id, user_id)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 fn account_sync_lock(id: Uuid) -> Arc<AsyncMutex<()>> {

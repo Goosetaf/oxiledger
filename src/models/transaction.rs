@@ -3,12 +3,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Whether a journal entry line is a debit or credit.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[cfg_attr(feature = "server", derive(sqlx::Type))]
-#[cfg_attr(
-    feature = "server",
-    sqlx(type_name = "entry_type", rename_all = "PascalCase")
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, strum::EnumString)]
 pub enum EntryType {
     Debit,
     Credit,
@@ -31,7 +26,6 @@ impl std::fmt::Display for EntryType {
 
 /// A single debit or credit line within a transaction.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "server", derive(sqlx::FromRow))]
 pub struct JournalEntry {
     pub id: Uuid,
     pub transaction_id: Uuid,
@@ -59,7 +53,6 @@ pub struct Transaction {
 
 /// A transaction header row (no entries, used for list queries).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[cfg_attr(feature = "server", derive(sqlx::FromRow))]
 pub struct TransactionRow {
     pub id: Uuid,
     pub user_id: Uuid,

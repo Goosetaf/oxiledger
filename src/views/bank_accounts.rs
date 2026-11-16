@@ -11,55 +11,10 @@ pub async fn list_bank_accounts() -> Result<Vec<BankAccountSummary>, ServerFnErr
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let rows = sqlx::query!(
-            r#"
-            SELECT
-                ba.id,
-                ba.name,
-                ba.iban,
-                ba.currency,
-                ba.internal_account_id AS "internal_account_id?: Uuid",
-                ba.is_manual,
-                a.name AS "internal_account_name?",
-                bc.aspsp_name,
-                bc.aspsp_country,
-                bc.provider_id AS "provider_id?: String",
-                bc.access_valid_until,
-                ba.last_synced_at
-            FROM bank_accounts ba
-            LEFT JOIN bank_connections bc ON bc.id = ba.bank_connection_id
-            LEFT JOIN accounts a ON a.id = ba.internal_account_id
-            WHERE ba.user_id = $1
-            ORDER BY COALESCE(bc.aspsp_name, ba.name), ba.name
-            "#,
-            user_id
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        let summaries = rows
-            .into_iter()
-            .map(|r| BankAccountSummary {
-                id: r.id,
-                name: r.name,
-                iban: r.iban,
-                currency: r.currency,
-                internal_account_id: r.internal_account_id,
-                internal_account_name: r.internal_account_name,
-                aspsp_name: r.aspsp_name,
-                aspsp_country: r.aspsp_country,
-                provider_id: r.provider_id,
-                access_valid_until: r.access_valid_until,
-                last_synced_at: r.last_synced_at,
-                is_manual: r.is_manual,
-            })
-            .collect();
-
-        return Ok(summaries);
+        return Ok(storage.bank_accounts.list(user_id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -72,11 +27,11 @@ pub async fn sync_bank_account(id: Uuid, force: Option<bool>) -> Result<SyncResu
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
         return crate::server::bank_sync_cache::sync_bank_account_for_user(
-            &pool,
+            &storage,
             user_id,
             id,
             force.unwrap_or(false),
@@ -98,19 +53,10 @@ pub async fn delete_bank_account(id: Uuid) -> Result<(), ServerFnError> {
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let result = sqlx::query!(
-            "DELETE FROM bank_accounts WHERE id = $1 AND user_id = $2",
-            id,
-            user_id
-        )
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        if result.rows_affected() == 0 {
+        if !storage.bank_accounts.delete(user_id, id).await? {
             return Err(ServerFnError::new("Bank account not found"));
         }
     }

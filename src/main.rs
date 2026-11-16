@@ -9,6 +9,8 @@ mod navigation;
 mod preferences;
 #[cfg(feature = "server")]
 mod server;
+#[cfg(feature = "server")]
+mod storage;
 mod views;
 
 use components::nav::Navbar;
@@ -173,9 +175,12 @@ fn server_main() {
     dotenvy::dotenv().ok();
 
     dioxus::serve(|| async move {
-        let pool = server::db::connect().await;
-        server::db::run_migrations(&pool).await;
-        server::bank_sync_cache::start_background_scheduler(pool.clone()).await;
+        let database_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| storage::DEFAULT_DATABASE_URL.to_string());
+        let storage = storage::Storage::connect(&database_url)
+            .await
+            .expect("Failed to open the database");
+        server::bank_sync_cache::start_background_scheduler(storage.clone()).await;
 
         let oidc_config = Arc::new(server::oidc::load_config().await);
 
@@ -194,6 +199,6 @@ fn server_main() {
             )
             .layer(CookieManagerLayer::new())
             .layer(Extension(oidc_config))
-            .layer(Extension(pool)))
+            .layer(Extension(storage)))
     });
 }

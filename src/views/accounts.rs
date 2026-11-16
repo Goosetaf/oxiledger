@@ -2,9 +2,6 @@ use crate::components::button::Button;
 use dioxus::prelude::*;
 use uuid::Uuid;
 
-#[cfg(feature = "server")]
-use crate::models::account::{AccountType, NormalBalance};
-
 use crate::models::account::Account;
 
 #[get("/api/accounts")]
@@ -13,26 +10,10 @@ async fn list_accounts() -> Result<Vec<Account>, ServerFnError> {
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let accounts = sqlx::query_as!(
-            Account,
-            r#"SELECT
-                id, user_id, name, code,
-                account_type AS "account_type: AccountType",
-                normal_balance AS "normal_balance: NormalBalance",
-                description, is_active
-            FROM accounts
-            WHERE user_id = $1
-            ORDER BY account_type, COALESCE(code, ''), name"#,
-            user_id
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        return Ok(accounts);
+        return Ok(storage.accounts.list(user_id).await?);
     }
 
     #[allow(unreachable_code)]
@@ -45,18 +26,10 @@ async fn toggle_account(account_id: Uuid) -> Result<(), ServerFnError> {
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        sqlx::query!(
-            "UPDATE accounts SET is_active = NOT is_active, updated_at = NOW()
-             WHERE id = $1 AND user_id = $2",
-            account_id,
-            user_id
-        )
-        .execute(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        storage.accounts.toggle_active(user_id, account_id).await?;
     }
 
     Ok(())
@@ -66,29 +39,26 @@ async fn toggle_account(account_id: Uuid) -> Result<(), ServerFnError> {
 async fn delete_account(id: Uuid) -> Result<(), ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use crate::server::auth::{extract_context, require_auth};
+        use crate::{
+            server::auth::{extract_context, require_auth},
+            storage::StorageError,
+        };
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let result = sqlx::query!(
-            "DELETE FROM accounts WHERE id = $1 AND user_id = $2",
-            id,
-            user_id
-        )
-        .execute(&pool)
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("journal_entries") || e.to_string().contains("foreign key") {
-                ServerFnError::new(
+        let deleted = storage
+            .accounts
+            .delete(user_id, id)
+            .await
+            .map_err(|e| match e {
+                StorageError::ForeignKeyViolation(_) => ServerFnError::new(
                     "This account is already used in journal entries and cannot be deleted.",
-                )
-            } else {
-                ServerFnError::new(e.to_string())
-            }
-        })?;
+                ),
+                other => other.into(),
+            })?;
 
-        if result.rows_affected() == 0 {
+        if !deleted {
             return Err(ServerFnError::new("Account not found"));
         }
     }

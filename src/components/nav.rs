@@ -15,22 +15,9 @@ async fn get_current_user() -> Result<Option<CurrentUser>, ServerFnError> {
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        match require_auth(&pool, &cookies).await {
-            Ok(user_id) => {
-                let row = sqlx::query!(
-                    "SELECT username, preferences FROM users WHERE id = $1",
-                    user_id
-                )
-                .fetch_optional(&pool)
-                .await
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-                return Ok(row.map(|r| CurrentUser {
-                    username: r.username,
-                    preferences: serde_json::from_value(r.preferences).unwrap_or_default(),
-                }));
-            }
+        let (storage, cookies) = extract_context().await?;
+        match require_auth(&storage, &cookies).await {
+            Ok(user_id) => return Ok(storage.users.find_current(user_id).await?),
             Err(ServerFnError::ServerError { code, .. })
                 if code == StatusCode::UNAUTHORIZED.as_u16() =>
             {
@@ -51,11 +38,11 @@ async fn logout_action() -> Result<(), ServerFnError> {
         use crate::server::auth::{extract_context, SESSION_COOKIE};
         use tower_cookies::Cookie;
 
-        let (pool, cookies) = extract_context().await?;
+        let (storage, cookies) = extract_context().await?;
 
         if let Some(cookie) = cookies.get(SESSION_COOKIE) {
             let token = cookie.value().to_string();
-            let _ = crate::server::auth::delete_session(&pool, &token).await;
+            let _ = crate::server::auth::delete_session(&storage, &token).await;
         }
 
         let mut removal = Cookie::new(SESSION_COOKIE, "");

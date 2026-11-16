@@ -8,47 +8,10 @@ async fn get_account_balances() -> Result<Vec<AccountBalance>, ServerFnError> {
     {
         use crate::server::auth::{extract_context, require_auth};
 
-        let (pool, cookies) = extract_context().await?;
-        let user_id = require_auth(&pool, &cookies).await?;
+        let (storage, cookies) = extract_context().await?;
+        let user_id = require_auth(&storage, &cookies).await?;
 
-        let rows = sqlx::query!(
-            r#"
-            SELECT
-                a.id,
-                a.name,
-                a.code,
-                a.normal_balance::text AS "normal_balance!: String",
-                COALESCE(SUM(CASE WHEN je.entry_type = 'Debit' THEN je.amount ELSE 0::numeric END), 0::numeric)
-                    AS "debit_sum!: rust_decimal::Decimal",
-                COALESCE(SUM(CASE WHEN je.entry_type = 'Credit' THEN je.amount ELSE 0::numeric END), 0::numeric)
-                    AS "credit_sum!: rust_decimal::Decimal"
-            FROM accounts a
-            LEFT JOIN journal_entries je ON je.account_id = a.id
-            WHERE a.user_id = $1 AND a.is_active = TRUE
-            GROUP BY a.id, a.name, a.code, a.normal_balance
-            ORDER BY a.account_type, COALESCE(a.code, ''), a.name
-            "#,
-            user_id
-        )
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        let balances = rows
-            .into_iter()
-            .map(|r| {
-                let balance = r.debit_sum - r.credit_sum;
-
-                AccountBalance {
-                    account_id: r.id,
-                    account_name: r.name,
-                    account_code: r.code,
-                    balance,
-                }
-            })
-            .collect();
-
-        return Ok(balances);
+        return Ok(storage.accounts.balances(user_id).await?);
     }
 
     #[allow(unreachable_code)]
