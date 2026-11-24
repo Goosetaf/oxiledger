@@ -1,14 +1,16 @@
 use openidconnect::{
     core::{
-        CoreAuthDisplay, CoreAuthPrompt, CoreErrorResponseType, CoreGenderClaim, CoreJsonWebKey,
-        CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm, CoreProviderMetadata,
-        CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse,
-        CoreTokenIntrospectionResponse, CoreTokenType,
+        CoreAuthDisplay, CoreAuthPrompt, CoreClaimName, CoreClaimType, CoreClientAuthMethod,
+        CoreErrorResponseType, CoreGenderClaim, CoreGrantType, CoreJsonWebKey,
+        CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm, CoreJwsSigningAlgorithm,
+        CoreResponseMode, CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse,
+        CoreSubjectIdentifierType, CoreTokenIntrospectionResponse, CoreTokenType,
     },
-    AdditionalClaims, AuthenticationFlow, AuthorizationCode, Client, ClientId, ClientSecret,
-    CsrfToken, EmptyExtraTokenFields, EndpointMaybeSet, EndpointNotSet, EndpointSet, IdTokenClaims,
-    IdTokenFields, IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier,
-    RedirectUrl, Scope, StandardErrorResponse, StandardTokenResponse, TokenResponse,
+    AdditionalClaims, AdditionalProviderMetadata, AuthenticationFlow, AuthorizationCode, Client,
+    ClientId, ClientSecret, CsrfToken, EmptyExtraTokenFields, EndpointMaybeSet, EndpointNotSet,
+    EndpointSet, IdTokenClaims, IdTokenFields, IssuerUrl, Nonce, OAuth2TokenResponse,
+    PkceCodeChallenge, PkceCodeVerifier, ProviderMetadata, RedirectUrl, Scope,
+    StandardErrorResponse, StandardTokenResponse, TokenResponse,
 };
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
@@ -34,6 +36,37 @@ pub struct GroupsClaim {
 }
 
 impl AdditionalClaims for GroupsClaim {}
+
+/// Provider metadata fields that openidconnect's core set does not model.
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+struct ProviderMetadataAdditional {
+    #[serde(default)]
+    authorization_response_iss_parameter_supported: bool,
+}
+
+impl AdditionalProviderMetadata for ProviderMetadataAdditional {}
+
+/// Provider metadata plus the RFC 9207 `iss` support flag.
+type OidcProviderMetadata = ProviderMetadata<
+    ProviderMetadataAdditional,
+    CoreAuthDisplay,
+    CoreClientAuthMethod,
+    CoreClaimName,
+    CoreClaimType,
+    CoreGrantType,
+    CoreJweContentEncryptionAlgorithm,
+    CoreJweKeyManagementAlgorithm,
+    CoreJsonWebKey,
+    CoreResponseMode,
+    CoreResponseType,
+    CoreSubjectIdentifierType,
+>;
+
+/// Whether an authorization response's `iss` names the expected provider.
+/// RFC 9207 §2.4 requires simple string comparison.
+fn issuer_matches(expected: &str, actual: &str) -> bool {
+    expected == actual
+}
 
 type OidcTokenResponse = StandardTokenResponse<
     IdTokenFields<
@@ -85,49 +118,59 @@ pub struct OidcProvider {
     client_id: ClientId,
     client_secret: ClientSecret,
     redirect_uri: RedirectUrl,
-    /// Discovered + configured openidconnect client, cached across sign-ins. Its
-    /// signing keys go stale when the provider rotates them, so a failed
-    /// verification re-discovers and replaces it.
-    client: Arc<RwLock<StoredOidcClient>>,
+    /// Discovered state, cached across sign-ins. The client's signing keys go
+    /// stale when the provider rotates them, so a failed verification
+    /// re-discovers and replaces it.
+    state: Arc<RwLock<ProviderState>>,
     /// When `true`, anyone this provider signs in gets an account on their first sign-in.
     pub allow_registration: bool,
     /// Who may sign in through this provider, checked on every sign-in.
     pub allowed_groups: AllowedGroups,
 }
 
+#[derive(Clone)]
+struct ProviderState {
+    client: StoredOidcClient,
+    /// Whether the provider advertised `authorization_response_iss_parameter_supported`.
+    requires_iss: bool,
+}
+
 impl OidcProvider {
-    /// The cached client, cloned so no lock is held across await points.
-    fn client(&self) -> StoredOidcClient {
-        self.client
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+    /// The cached state, cloned so no lock is held across await points.
+    fn state(&self) -> ProviderState {
+        self.state.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    /// Re-discovers the provider, caches the resulting client, and returns it.
-    async fn refresh(&self, http_client: &reqwest::Client) -> Result<StoredOidcClient, String> {
-        let metadata = CoreProviderMetadata::discover_async(self.issuer.clone(), http_client)
+    /// Re-discovers the provider, caches the resulting state, and returns it.
+    async fn refresh(&self, http_client: &reqwest::Client) -> Result<ProviderState, String> {
+        let metadata = OidcProviderMetadata::discover_async(self.issuer.clone(), http_client)
             .await
             .map_err(|e| e.to_string())?;
-        let client = build_client(
+        let state = build_state(
             metadata,
             self.client_id.clone(),
             self.client_secret.clone(),
             self.redirect_uri.clone(),
         );
-        *self.client.write().unwrap_or_else(|e| e.into_inner()) = client.clone();
-        Ok(client)
+        *self.state.write().unwrap_or_else(|e| e.into_inner()) = state.clone();
+        Ok(state)
     }
 }
 
-fn build_client(
-    metadata: CoreProviderMetadata,
+fn build_state(
+    metadata: OidcProviderMetadata,
     client_id: ClientId,
     client_secret: ClientSecret,
     redirect_uri: RedirectUrl,
-) -> StoredOidcClient {
-    Client::from_provider_metadata(metadata, client_id, Some(client_secret))
-        .set_redirect_uri(redirect_uri)
+) -> ProviderState {
+    let requires_iss = metadata
+        .additional_metadata()
+        .authorization_response_iss_parameter_supported;
+    ProviderState {
+        client: Client::from_provider_metadata(metadata, client_id, Some(client_secret))
+            .set_redirect_uri(redirect_uri),
+        requires_iss,
+    }
 }
 
 /// App-level OIDC configuration shared across requests via `Arc`.
@@ -256,7 +299,7 @@ pub async fn load_config() -> OidcConfig {
         };
 
         let metadata =
-            match CoreProviderMetadata::discover_async(issuer_url.clone(), &http_client).await {
+            match OidcProviderMetadata::discover_async(issuer_url.clone(), &http_client).await {
                 Ok(m) => m,
                 Err(e) => {
                     eprintln!("[oidc] Discovery failed for provider {n} ({issuer}): {e}");
@@ -274,7 +317,7 @@ pub async fn load_config() -> OidcConfig {
 
         let client_id = ClientId::new(client_id);
         let client_secret = ClientSecret::new(client_secret);
-        let client = build_client(
+        let state = build_state(
             metadata,
             client_id.clone(),
             client_secret.clone(),
@@ -289,7 +332,7 @@ pub async fn load_config() -> OidcConfig {
             client_id,
             client_secret,
             redirect_uri: redirect_url,
-            client: Arc::new(RwLock::new(client)),
+            state: Arc::new(RwLock::new(state)),
             allow_registration: env_var_is_true(&format!("{prefix}ALLOW_REGISTRATION")),
             allowed_groups,
         });
@@ -330,7 +373,7 @@ pub async fn handle_start(
     let nonce = Nonce::new_random();
     let nonce_for_url = nonce.clone();
 
-    let client = provider.client();
+    let client = provider.state().client;
     let mut auth_request = client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
@@ -431,6 +474,8 @@ pub async fn handle_callback(
         }
     };
 
+    let mut state = provider.state();
+
     // The provider answers with `error` instead of `code` when it rejects or the
     // user cancels (RFC 6749 §4.1.2.1).
     if let Some(error) = params.error {
@@ -448,19 +493,28 @@ pub async fn handle_callback(
             .into_response();
     }
 
-    // If the provider identifies itself in the response, it must be the provider
-    // this flow was started with (RFC 9207).
-    if let Some(iss) = params.iss {
-        let matches =
-            IssuerUrl::new(iss.clone()).is_ok_and(|issuer| issuer.url() == provider.issuer.url());
-        if !matches {
-            eprintln!("[oidc] Authorization response issuer mismatch: {iss}");
+    // RFC 9207 §2.4: providers that advertise support must send `iss`, and it must
+    // exactly match the issuer we sent the request to. Legacy providers may omit it.
+    match params.iss {
+        Some(iss) => {
+            if !issuer_matches(provider.issuer.as_str(), &iss) {
+                eprintln!("[oidc] Authorization response issuer mismatch: {iss}");
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    "Invalid issuer in authorization response",
+                )
+                    .into_response();
+            }
+        }
+        None if state.requires_iss => {
+            eprintln!("[oidc] Provider advertises RFC 9207 support but omitted `iss`");
             return (
                 axum::http::StatusCode::BAD_REQUEST,
-                "Invalid issuer in authorization response",
+                "Missing issuer in authorization response",
             )
                 .into_response();
         }
+        None => {}
     }
 
     let code = match params.code {
@@ -479,8 +533,7 @@ pub async fn handle_callback(
     let pkce_verifier = PkceCodeVerifier::new(state_row.pkce_verifier);
     let nonce = Nonce::new(state_row.nonce);
 
-    let mut client = provider.client();
-    let token_response = match client.exchange_code(code) {
+    let token_response = match state.client.exchange_code(code) {
         Ok(request) => {
             request
                 .set_pkce_verifier(pkce_verifier)
@@ -523,15 +576,15 @@ pub async fn handle_callback(
     };
 
     let initial_claims = {
-        let verifier = client.id_token_verifier();
+        let verifier = state.client.id_token_verifier();
         id_token.claims(&verifier, &nonce)
     };
     let claims = match initial_claims {
         Ok(c) => c,
         Err(e) => {
             eprintln!("[oidc] ID token verification failed: {e} — refreshing provider keys");
-            client = match provider.refresh(&http_client).await {
-                Ok(client) => client,
+            state = match provider.refresh(&http_client).await {
+                Ok(state) => state,
                 Err(e) => {
                     eprintln!("[oidc] Failed to refresh provider keys: {e}");
                     return (
@@ -542,7 +595,7 @@ pub async fn handle_callback(
                 }
             };
 
-            let verifier = client.id_token_verifier();
+            let verifier = state.client.id_token_verifier();
             match id_token.claims(&verifier, &nonce) {
                 Ok(c) => c,
                 Err(e) => {
@@ -577,7 +630,7 @@ pub async fn handle_callback(
 
     // 5. Providers limited to some groups only let their members in, on every sign-in.
     if let AllowedGroups::Only(allowed) = &provider.allowed_groups {
-        let groups = user_groups(&client, &token_response, claims, &http_client).await;
+        let groups = user_groups(&state.client, &token_response, claims, &http_client).await;
         if !groups.iter().any(|g| allowed.contains(g)) {
             return (
                 axum::http::StatusCode::FORBIDDEN,
@@ -729,4 +782,48 @@ pub struct CallbackParams {
     pub error_uri: Option<String>,
     /// The provider's issuer, when it implements RFC 9207.
     pub iss: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{issuer_matches, OidcProviderMetadata};
+
+    #[test]
+    fn issuer_comparison_is_exact() {
+        assert!(issuer_matches("https://idp.example", "https://idp.example"));
+        assert!(!issuer_matches(
+            "https://idp.example",
+            "https://idp.example/"
+        ));
+        assert!(!issuer_matches(
+            "https://idp.example",
+            "HTTPS://IDP.EXAMPLE"
+        ));
+        assert!(!issuer_matches(
+            "https://idp.example",
+            "https://evil.example"
+        ));
+    }
+
+    #[test]
+    fn discovery_captures_iss_parameter_support() {
+        let metadata: OidcProviderMetadata = serde_json::from_str(
+            r#"{
+                "issuer": "https://idp.example",
+                "authorization_endpoint": "https://idp.example/authorize",
+                "jwks_uri": "https://idp.example/jwks",
+                "response_types_supported": ["code"],
+                "subject_types_supported": ["public"],
+                "id_token_signing_alg_values_supported": ["RS256"],
+                "authorization_response_iss_parameter_supported": true
+            }"#,
+        )
+        .unwrap();
+
+        assert!(
+            metadata
+                .additional_metadata()
+                .authorization_response_iss_parameter_supported
+        );
+    }
 }
